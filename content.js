@@ -1,29 +1,49 @@
-// --- Global Player State ---
+// --- State Management ---
 let currentChatElement = null;
-let wordSpans = [];
-let currentWordIndex = 0;
-
+let fullTextWords = [];
 let textChunks = [];
-let chunkStartWordIndices = [];
 let currentChunkIndex = 0;
+let currentWordIndex = 0;
 
 let playerState = "IDLE"; // 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED'
 let controlBar = null;
 
-// Inject Floating Glass Player Bar
+// Periodically look for chat bubbles to append inline play buttons
+setInterval(() => {
+    injectInlinePlayButtons();
+}, 1500);
+
+function injectInlinePlayButtons() {
+    const chats = getAllChatBubbles();
+    chats.forEach((chat, index) => {
+        if (chat.querySelector(".kokoro-inline-play-btn")) return;
+
+        const btn = document.createElement("div");
+        btn.className = "kokoro-inline-play-btn";
+        btn.innerHTML = `▶ Read Response #${index + 1}`;
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            injectControlBar();
+            speakFullResponse(chat);
+        };
+
+        chat.insertBefore(btn, chat.firstChild);
+    });
+}
+
+// Inject Floating Control Bar
 function injectControlBar() {
     if (document.getElementById("kokoro-control-bar")) return;
 
     controlBar = document.createElement("div");
     controlBar.id = "kokoro-control-bar";
     controlBar.innerHTML = `
-    <div class="kokoro-now-playing">
-      <div class="kokoro-now-playing-text" id="kk-np-text">Select a chat to play...</div>
-      <div class="kokoro-eq" id="kk-eq" style="display: none;">
-        <div class="kokoro-eq-bar"></div>
-        <div class="kokoro-eq-bar"></div>
-        <div class="kokoro-eq-bar"></div>
+    <div class="kokoro-now-playing" id="kk-np-box">
+      <div class="kokoro-np-header">
+        <div class="kokoro-now-playing-text" id="kk-np-text">Select response...</div>
+        <span class="kokoro-dropdown-arrow">▼</span>
       </div>
+      <div class="kokoro-response-dropdown" id="kk-dropdown"></div>
     </div>
     <div class="kokoro-top-row">
       <div class="kokoro-drag-handle" id="kk-drag" title="Drag to move">
@@ -53,12 +73,15 @@ function injectControlBar() {
   `;
     document.body.appendChild(controlBar);
 
-    // Bind Control Events
+    // Bind Events
     document.getElementById("kk-play").onclick = togglePlayPause;
     document.getElementById("kk-rw").onclick = () => seekRelative(-10);
     document.getElementById("kk-ff").onclick = () => seekRelative(10);
     document.getElementById("kk-next").onclick = readNextChat;
     document.getElementById("kk-prev").onclick = readPreviousChat;
+
+    const npBox = document.getElementById("kk-np-box");
+    npBox.onclick = toggleDropdown;
 
     const seekBar = document.getElementById("kk-seekbar");
     seekBar.oninput = handleSeekBarInput;
@@ -66,7 +89,45 @@ function injectControlBar() {
     makeDraggable(controlBar, document.getElementById("kk-drag"));
 }
 
-// Draggable Handler
+// Toggle & Populate Now Playing Dropdown List
+function toggleDropdown(e) {
+    e.stopPropagation();
+    const dropdown = document.getElementById("kk-dropdown");
+    const isVisible = dropdown.classList.contains("show");
+
+    if (isVisible) {
+        dropdown.classList.remove("show");
+        return;
+    }
+
+    const chats = getAllChatBubbles();
+    dropdown.innerHTML = "";
+
+    chats.forEach((chat, index) => {
+        const snippet =
+            chat.innerText
+                .replace(/▶ Read Response #\d+/, "")
+                .trim()
+                .slice(0, 45) + "...";
+        const item = document.createElement("div");
+        item.className =
+            "kokoro-dropdown-item" +
+            (chat === currentChatElement ? " active" : "");
+        item.innerText = `${index + 1}. ${snippet}`;
+
+        item.onclick = (e) => {
+            e.stopPropagation();
+            dropdown.classList.remove("show");
+            speakFullResponse(chat);
+        };
+
+        dropdown.appendChild(item);
+    });
+
+    dropdown.classList.add("show");
+}
+
+// Draggable Engine
 function makeDraggable(element, handle) {
     let offsetX = 0,
         offsetY = 0;
@@ -96,87 +157,31 @@ function makeDraggable(element, handle) {
     };
 }
 
-// Process Response Text
-function prepareFullResponse(element) {
-    clearHighlights();
+// Prepare & Chunk Text (Clean, standard text retrieval without spans)
+function prepareTextChunks(element) {
     currentChatElement = element;
-    wordSpans = [];
 
-    const walker = document.createTreeWalker(
-        element,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false,
-    );
-    const textNodes = [];
-    let node;
-    while ((node = walker.nextNode())) {
-        if (node.nodeValue.trim().length > 0) textNodes.push(node);
-    }
+    // Clone element to strip out inline play button text
+    const clone = element.cloneNode(true);
+    const inlineBtn = clone.querySelector(".kokoro-inline-play-btn");
+    if (inlineBtn) inlineBtn.remove();
 
-    textNodes.forEach((textNode) => {
-        const parent = textNode.parentNode;
-        if (
-            parent.tagName === "SPAN" &&
-            parent.classList.contains("kokoro-word-span")
-        )
-            return;
+    const cleanText = clone.innerText.trim();
+    fullTextWords = cleanText.split(/\s+/);
 
-        const words = textNode.nodeValue.split(/(\s+)/);
-        const fragment = document.createDocumentFragment();
-
-        words.forEach((word) => {
-            if (word.trim().length > 0) {
-                const span = document.createElement("span");
-                span.className = "kokoro-word-span";
-                span.innerText = word;
-                fragment.appendChild(span);
-                wordSpans.push(span);
-            } else {
-                fragment.appendChild(document.createTextNode(word));
-            }
-        });
-
-        parent.replaceChild(fragment, textNode);
-    });
-
-    // Update Now Playing Title
-    const snippet = element.innerText.slice(0, 35) + "...";
+    // Update Now Playing Title Snippet
+    const snippet = cleanText.slice(0, 35) + "...";
     document.getElementById("kk-np-text").innerText = snippet;
 
-    buildSentenceChunks();
-}
+    // Highlight Active Inline Button State
+    document
+        .querySelectorAll(".kokoro-inline-play-btn")
+        .forEach((btn) => btn.classList.remove("active"));
+    const activeBtn = element.querySelector(".kokoro-inline-play-btn");
+    if (activeBtn) activeBtn.classList.add("active");
 
-function buildSentenceChunks() {
-    textChunks = [];
-    chunkStartWordIndices = [];
-
-    let currentChunkWords = [];
-    let currentLength = 0;
-
-    wordSpans.forEach((span, index) => {
-        const word = span.innerText;
-        currentChunkWords.push(word);
-        currentLength += word.length + 1;
-
-        const isSentenceEnd = /[.!?]$/.test(word.trim());
-        if ((isSentenceEnd && currentLength > 80) || currentLength > 200) {
-            if (textChunks.length === 0) chunkStartWordIndices.push(0);
-            textChunks.push(currentChunkWords.join(" "));
-
-            currentChunkWords = [];
-            currentLength = 0;
-            if (index + 1 < wordSpans.length) {
-                chunkStartWordIndices.push(index + 1);
-            }
-        }
-    });
-
-    if (currentChunkWords.length > 0) {
-        if (textChunks.length === 0) chunkStartWordIndices.push(0);
-        textChunks.push(currentChunkWords.join(" "));
-    }
-
+    // Sentence Chunking
+    textChunks = cleanText.match(/[^.!?]+[.!?]+|\S+/g) || [cleanText];
     updateTotalTimeDisplay();
 }
 
@@ -185,7 +190,7 @@ function speakFullResponse(chatElement) {
     setLoadingState(true);
 
     setTimeout(() => {
-        prepareFullResponse(chatElement);
+        prepareTextChunks(chatElement);
         currentChunkIndex = 0;
         currentWordIndex = 0;
         playChunk(0);
@@ -194,7 +199,6 @@ function speakFullResponse(chatElement) {
 
 function playChunk(index) {
     if (index >= textChunks.length) {
-        clearHighlights();
         setPlayerState("IDLE");
         updateProgressUI(100);
         return;
@@ -207,8 +211,6 @@ function playChunk(index) {
     const utterance = new SpeechSynthesisUtterance(chunkText);
     utterance.rate = rate;
 
-    const baseWordIndex = chunkStartWordIndices[index] || 0;
-
     utterance.onstart = () => {
         setLoadingState(false);
         setPlayerState("PLAYING");
@@ -216,7 +218,11 @@ function playChunk(index) {
 
     utterance.onboundary = (event) => {
         if (event.name === "word") {
-            highlightWordAtOffset(baseWordIndex, event.charIndex);
+            currentWordIndex += 1;
+            const pct = Math.floor(
+                (currentWordIndex / Math.max(1, fullTextWords.length)) * 100,
+            );
+            updateProgressUI(pct);
         }
     };
 
@@ -227,48 +233,9 @@ function playChunk(index) {
     };
 
     window.speechSynthesis.speak(utterance);
-    if (currentChatElement) {
-        currentChatElement.scrollIntoView({
-            behavior: "smooth",
-            block: "nearest",
-        });
-    }
 }
 
-// Word-Level Glowing Highlight Sync
-function highlightWordAtOffset(baseIndex, charIndex) {
-    clearHighlights();
-
-    let accumulatedLength = 0;
-    for (let i = baseIndex; i < wordSpans.length; i++) {
-        const wordLength = wordSpans[i].innerText.length;
-        if (
-            charIndex >= accumulatedLength &&
-            charIndex < accumulatedLength + wordLength + 1
-        ) {
-            currentWordIndex = i;
-            wordSpans[i].classList.add("kokoro-word-highlight");
-            wordSpans[i].scrollIntoView({
-                behavior: "smooth",
-                block: "nearest",
-            });
-
-            // Calculate progress percentage
-            const progressPercent = Math.floor(
-                (currentWordIndex / Math.max(1, wordSpans.length - 1)) * 100,
-            );
-            updateProgressUI(progressPercent);
-            break;
-        }
-        accumulatedLength += wordLength + 1;
-    }
-}
-
-function clearHighlights() {
-    wordSpans.forEach((span) => span.classList.remove("kokoro-word-highlight"));
-}
-
-// Player States
+// States Management
 function togglePlayPause() {
     if (playerState === "PLAYING") {
         window.speechSynthesis.pause();
@@ -294,52 +261,42 @@ function setLoadingState(isLoading) {
 function setPlayerState(state) {
     playerState = state;
     const playBtn = document.getElementById("kk-play");
-    const eq = document.getElementById("kk-eq");
-
     if (!playBtn) return;
 
     if (state === "PLAYING") {
         playBtn.innerText = "⏸";
-        if (eq) eq.style.display = "flex";
     } else if (state === "PAUSED" || state === "IDLE") {
         playBtn.innerText = "▶";
-        if (eq) eq.style.display = "none";
     }
 }
 
-// Seek Engine & Progress
+// Seeking & Progress Bar
 function seekRelative(offsetWords) {
-    if (!wordSpans.length) return;
+    if (!fullTextWords.length) return;
     const targetIndex = Math.max(
         0,
-        Math.min(wordSpans.length - 1, currentWordIndex + offsetWords),
+        Math.min(fullTextWords.length - 1, currentWordIndex + offsetWords),
     );
     seekToWordIndex(targetIndex);
 }
 
 function handleSeekBarInput(e) {
-    if (!wordSpans.length) return;
+    if (!fullTextWords.length) return;
     const pct = parseFloat(e.target.value);
-    const targetIndex = Math.floor((pct / 100) * (wordSpans.length - 1));
+    const targetIndex = Math.floor((pct / 100) * (fullTextWords.length - 1));
     seekToWordIndex(targetIndex);
 }
 
 function seekToWordIndex(targetIndex) {
     currentWordIndex = targetIndex;
-
-    let targetChunk = 0;
-    for (let i = 0; i < chunkStartWordIndices.length; i++) {
-        if (targetIndex >= chunkStartWordIndices[i]) {
-            targetChunk = i;
-        } else {
-            break;
-        }
-    }
+    const chunkTarget = Math.floor(
+        (targetIndex / fullTextWords.length) * textChunks.length,
+    );
 
     window.speechSynthesis.cancel();
     setLoadingState(true);
     setTimeout(() => {
-        playChunk(targetChunk);
+        playChunk(chunkTarget);
     }, 50);
 }
 
@@ -348,7 +305,7 @@ function updateProgressUI(pct) {
     const timeCur = document.getElementById("kk-time-cur");
     if (seekBar) seekBar.value = pct;
 
-    const totalWords = wordSpans.length || 1;
+    const totalWords = fullTextWords.length || 1;
     const totalSecs = Math.floor(totalWords / 2.5);
     const currentSecs = Math.floor((pct / 100) * totalSecs);
 
@@ -357,7 +314,7 @@ function updateProgressUI(pct) {
 
 function updateTotalTimeDisplay() {
     const timeTot = document.getElementById("kk-time-tot");
-    const totalWords = wordSpans.length || 0;
+    const totalWords = fullTextWords.length || 0;
     const totalSecs = Math.floor(totalWords / 2.5);
     if (timeTot) timeTot.innerText = formatTime(totalSecs);
 }
