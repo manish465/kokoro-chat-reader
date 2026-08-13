@@ -10,13 +10,21 @@ let currentChunkIndex = 0;
 let playerState = "IDLE"; // 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED'
 let controlBar = null;
 
-// --- Inject & Build Floating UI ---
+// Inject Floating Glass Player Bar
 function injectControlBar() {
     if (document.getElementById("kokoro-control-bar")) return;
 
     controlBar = document.createElement("div");
     controlBar.id = "kokoro-control-bar";
     controlBar.innerHTML = `
+    <div class="kokoro-now-playing">
+      <div class="kokoro-now-playing-text" id="kk-np-text">Select a chat to play...</div>
+      <div class="kokoro-eq" id="kk-eq" style="display: none;">
+        <div class="kokoro-eq-bar"></div>
+        <div class="kokoro-eq-bar"></div>
+        <div class="kokoro-eq-bar"></div>
+      </div>
+    </div>
     <div class="kokoro-top-row">
       <div class="kokoro-drag-handle" id="kk-drag" title="Drag to move">
         <svg width="12" height="16" viewBox="0 0 12 18" fill="currentColor">
@@ -45,7 +53,7 @@ function injectControlBar() {
   `;
     document.body.appendChild(controlBar);
 
-    // Bind Listeners
+    // Bind Control Events
     document.getElementById("kk-play").onclick = togglePlayPause;
     document.getElementById("kk-rw").onclick = () => seekRelative(-10);
     document.getElementById("kk-ff").onclick = () => seekRelative(10);
@@ -58,7 +66,7 @@ function injectControlBar() {
     makeDraggable(controlBar, document.getElementById("kk-drag"));
 }
 
-// Fixed Dragging Logic (Prevents Locking Up On First Move)
+// Draggable Handler
 function makeDraggable(element, handle) {
     let offsetX = 0,
         offsetY = 0;
@@ -67,7 +75,6 @@ function makeDraggable(element, handle) {
         e.preventDefault();
         const rect = element.getBoundingClientRect();
 
-        // Set explicit top/left derived from current bounding client
         element.style.top = rect.top + "px";
         element.style.left = rect.left + "px";
         element.style.bottom = "auto";
@@ -89,7 +96,7 @@ function makeDraggable(element, handle) {
     };
 }
 
-// Wrap complete targeted response words in targetable spans
+// Process Response Text
 function prepareFullResponse(element) {
     clearHighlights();
     currentChatElement = element;
@@ -133,10 +140,13 @@ function prepareFullResponse(element) {
         parent.replaceChild(fragment, textNode);
     });
 
+    // Update Now Playing Title
+    const snippet = element.innerText.slice(0, 35) + "...";
+    document.getElementById("kk-np-text").innerText = snippet;
+
     buildSentenceChunks();
 }
 
-// Chunk complete response into smaller, reliable text blocks
 function buildSentenceChunks() {
     textChunks = [];
     chunkStartWordIndices = [];
@@ -170,7 +180,6 @@ function buildSentenceChunks() {
     updateTotalTimeDisplay();
 }
 
-// Speak full response chunk by chunk
 function speakFullResponse(chatElement) {
     window.speechSynthesis.cancel();
     setLoadingState(true);
@@ -226,7 +235,7 @@ function playChunk(index) {
     }
 }
 
-// Dynamic Word Highlighting
+// Word-Level Glowing Highlight Sync
 function highlightWordAtOffset(baseIndex, charIndex) {
     clearHighlights();
 
@@ -244,10 +253,11 @@ function highlightWordAtOffset(baseIndex, charIndex) {
                 block: "nearest",
             });
 
-            const pct = Math.floor(
+            // Calculate progress percentage
+            const progressPercent = Math.floor(
                 (currentWordIndex / Math.max(1, wordSpans.length - 1)) * 100,
             );
-            updateProgressUI(pct);
+            updateProgressUI(progressPercent);
             break;
         }
         accumulatedLength += wordLength + 1;
@@ -258,7 +268,7 @@ function clearHighlights() {
     wordSpans.forEach((span) => span.classList.remove("kokoro-word-highlight"));
 }
 
-// State Machine Handling Play / Pause / Load
+// Player States
 function togglePlayPause() {
     if (playerState === "PLAYING") {
         window.speechSynthesis.pause();
@@ -284,16 +294,20 @@ function setLoadingState(isLoading) {
 function setPlayerState(state) {
     playerState = state;
     const playBtn = document.getElementById("kk-play");
+    const eq = document.getElementById("kk-eq");
+
     if (!playBtn) return;
 
     if (state === "PLAYING") {
         playBtn.innerText = "⏸";
+        if (eq) eq.style.display = "flex";
     } else if (state === "PAUSED" || state === "IDLE") {
         playBtn.innerText = "▶";
+        if (eq) eq.style.display = "none";
     }
 }
 
-// Seeking Controls & Progress Bar
+// Seek Engine & Progress
 function seekRelative(offsetWords) {
     if (!wordSpans.length) return;
     const targetIndex = Math.max(
@@ -354,7 +368,6 @@ function formatTime(secs) {
     return `${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
-// Selector for assistant responses
 function getAllChatBubbles() {
     return Array.from(
         document.querySelectorAll(
