@@ -1,45 +1,45 @@
-/* Premium Glowing Word Highlight */
+/* Glowing Word-Only Highlight */
 .kokoro-word-highlight {
     background: linear-gradient(135deg, #a855f7, #6366f1) !important;
     color: #ffffff !important;
     border-radius: 4px;
     padding: 1px 4px;
-    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 0 12px rgba(168, 85, 247, 0.5);
+    transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.6);
     display: inline-block;
 }
 
-/* Active Chat Bubble Highlight */
-.kokoro-active-chat-bubble {
-    outline: 2px solid rgba(99, 102, 241, 0.4) !important;
-    outline-offset: 6px;
-    border-radius: 12px;
-    transition: outline 0.3s ease;
-}
-
-/* Glassmorphism Floating Control Bar */
+/* Glassmorphic Floating Player Bar */
 #kokoro-control-bar {
     position: fixed;
     bottom: 30px;
     right: 30px;
     z-index: 999999;
-    background: rgba(18, 18, 26, 0.82);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(18, 18, 26, 0.88);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     color: #f3f4f6;
-    padding: 8px 14px;
-    border-radius: 999px;
+    padding: 10px 16px;
+    border-radius: 20px;
     box-shadow:
-        0 20px 40px rgba(0, 0, 0, 0.45),
+        0 20px 40px rgba(0, 0, 0, 0.5),
         0 0 0 1px rgba(255, 255, 255, 0.05);
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 8px;
+    width: 320px;
     font-family:
         -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     user-select: none;
-    cursor: default;
+    box-sizing: border-box;
+}
+
+.kokoro-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
 }
 
 /* Drag Handle */
@@ -60,50 +60,111 @@
 
 /* Control Buttons */
 .kokoro-btn {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.06);
     color: #e5e7eb;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    width: 32px;
-    height: 32px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s ease;
+    font-size: 13px;
     padding: 0;
 }
 
 .kokoro-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.18);
     color: #ffffff;
     transform: translateY(-1px);
+}
+
+.kokoro-btn:active {
+    transform: scale(0.95);
 }
 
 .kokoro-btn-primary {
     background: linear-gradient(135deg, #6366f1, #a855f7);
     border: none;
     color: #fff;
-    width: 36px;
-    height: 36px;
-    box-shadow: 0 4px 12px rgba(168, 85, 247, 0.35);
+    width: 38px;
+    height: 38px;
+    box-shadow: 0 4px 14px rgba(168, 85, 247, 0.4);
 }
 
 .kokoro-btn-primary:hover {
     background: linear-gradient(135deg, #4f46e5, #9333ea);
-    box-shadow: 0 6px 16px rgba(168, 85, 247, 0.5);
+    box-shadow: 0 6px 18px rgba(168, 85, 247, 0.6);
     transform: scale(1.05);
 }
 
-/* Speed Selector Badge */
+/* Loading State Spinner */
+@keyframes kokoro-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.kokoro-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: kokoro-spin 0.8s linear infinite;
+}
+
+/* Speed Dropdown */
 .kokoro-speed-select {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.06);
     color: #a7f3d0;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    padding: 4px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 4px 6px;
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     outline: none;
+}
+
+/* Music Player Seek Progress Bar */
+.kokoro-progress-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    color: #9ca3af;
+    font-family: monospace;
+}
+
+.kokoro-seek-bar {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.15);
+    outline: none;
+    cursor: pointer;
+    transition: height 0.1s;
+}
+
+.kokoro-seek-bar:hover {
+    height: 6px;
+}
+
+.kokoro-seek-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #a855f7;
+    box-shadow: 0 0 6px rgba(168, 85, 247, 0.8);
+    cursor: pointer;
 }

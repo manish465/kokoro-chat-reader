@@ -1,96 +1,98 @@
-// --- State Management ---
+// --- Global Player State ---
 let currentChatElement = null;
 let wordSpans = [];
 let currentWordIndex = 0;
 
-// Chunking state
 let textChunks = [];
-let currentChunkIndex = 0;
 let chunkStartWordIndices = [];
+let currentChunkIndex = 0;
 
-// Floating Control Bar Instance
+let playerState = "IDLE"; // 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED'
 let controlBar = null;
 
-// Inject / Render Floating Glass Bar
+// --- Inject & Build Floating UI ---
 function injectControlBar() {
     if (document.getElementById("kokoro-control-bar")) return;
 
     controlBar = document.createElement("div");
     controlBar.id = "kokoro-control-bar";
     controlBar.innerHTML = `
-    <div class="kokoro-drag-handle" id="kk-drag" title="Drag bar">
-      <svg width="12" height="18" viewBox="0 0 12 18" fill="currentColor">
-        <circle cx="4" cy="4" r="1.5"/><circle cx="8" cy="4" r="1.5"/>
-        <circle cx="4" cy="9" r="1.5"/><circle cx="8" cy="9" r="1.5"/>
-        <circle cx="4" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/>
-      </svg>
+    <div class="kokoro-top-row">
+      <div class="kokoro-drag-handle" id="kk-drag" title="Drag to move">
+        <svg width="12" height="16" viewBox="0 0 12 18" fill="currentColor">
+          <circle cx="4" cy="4" r="1.5"/><circle cx="8" cy="4" r="1.5"/>
+          <circle cx="4" cy="9" r="1.5"/><circle cx="8" cy="9" r="1.5"/>
+          <circle cx="4" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/>
+        </svg>
+      </div>
+      <button class="kokoro-btn" id="kk-prev" title="Previous Response">⏮</button>
+      <button class="kokoro-btn" id="kk-rw" title="Rewind">⏪</button>
+      <button class="kokoro-btn kokoro-btn-primary" id="kk-play" title="Play/Pause">▶</button>
+      <button class="kokoro-btn" id="kk-ff" title="Forward">⏩</button>
+      <button class="kokoro-btn" id="kk-next" title="Next Response">⏭</button>
+      <select class="kokoro-speed-select" id="kk-speed">
+        <option value="0.8">0.8x</option>
+        <option value="1.0" selected>1.0x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+      </select>
     </div>
-    <button class="kokoro-btn" id="kk-prev" title="Previous Response">⏮</button>
-    <button class="kokoro-btn" id="kk-rw" title="Rewind 5s">⏪</button>
-    <button class="kokoro-btn kokoro-btn-primary" id="kk-play" title="Play/Pause">▶</button>
-    <button class="kokoro-btn" id="kk-ff" title="Forward 5s">⏩</button>
-    <button class="kokoro-btn" id="kk-next" title="Next Response">⏭</button>
-    <select class="kokoro-speed-select" id="kk-speed">
-      <option value="0.8">0.8x</option>
-      <option value="1.0" selected>1.0x</option>
-      <option value="1.25">1.25x</option>
-      <option value="1.5">1.5x</option>
-    </select>
+    <div class="kokoro-progress-container">
+      <span id="kk-time-cur">0:00</span>
+      <input type="range" class="kokoro-seek-bar" id="kk-seekbar" value="0" min="0" max="100" step="1" />
+      <span id="kk-time-tot">0:00</span>
+    </div>
   `;
     document.body.appendChild(controlBar);
 
-    // Bind Events
+    // Bind Listeners
     document.getElementById("kk-play").onclick = togglePlayPause;
-    document.getElementById("kk-rw").onclick = () => seekWords(-10);
-    document.getElementById("kk-ff").onclick = () => seekWords(10);
+    document.getElementById("kk-rw").onclick = () => seekRelative(-10);
+    document.getElementById("kk-ff").onclick = () => seekRelative(10);
     document.getElementById("kk-next").onclick = readNextChat;
     document.getElementById("kk-prev").onclick = readPreviousChat;
+
+    const seekBar = document.getElementById("kk-seekbar");
+    seekBar.oninput = handleSeekBarInput;
 
     makeDraggable(controlBar, document.getElementById("kk-drag"));
 }
 
-// Make Floating Bar Draggable Anywhere
+// Fixed Dragging Logic (Prevents Locking Up On First Move)
 function makeDraggable(element, handle) {
-    let pos1 = 0,
-        pos2 = 0,
-        pos3 = 0,
-        pos4 = 0;
-    handle.onmousedown = dragMouseDown;
+    let offsetX = 0,
+        offsetY = 0;
 
-    function dragMouseDown(e) {
+    handle.onmousedown = (e) => {
         e.preventDefault();
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        document.onmouseup = closeDragElement;
-        document.onmousemove = elementDrag;
-    }
+        const rect = element.getBoundingClientRect();
 
-    function elementDrag(e) {
-        e.preventDefault();
-        pos1 = pos3 - e.clientX;
-        pos2 = pos4 - e.clientY;
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        element.style.top = element.offsetTop - pos2 + "px";
-        element.style.left = element.offsetLeft - pos1 + "px";
+        // Set explicit top/left derived from current bounding client
+        element.style.top = rect.top + "px";
+        element.style.left = rect.left + "px";
         element.style.bottom = "auto";
         element.style.right = "auto";
-    }
 
-    function closeDragElement() {
-        document.onmouseup = null;
-        document.onmousemove = null;
-    }
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+
+        document.onmousemove = (e) => {
+            e.preventDefault();
+            element.style.left = e.clientX - offsetX + "px";
+            element.style.top = e.clientY - offsetY + "px";
+        };
+
+        document.onmouseup = () => {
+            document.onmousemove = null;
+            document.onmouseup = null;
+        };
+    };
 }
 
-// Wrap chat words into targetable <span> elements
-function prepareChatElement(element) {
-    if (currentChatElement) {
-        currentChatElement.classList.remove("kokoro-active-chat-bubble");
-    }
-
+// Wrap complete targeted response words in targetable spans
+function prepareFullResponse(element) {
+    clearHighlights();
     currentChatElement = element;
-    currentChatElement.classList.add("kokoro-active-chat-bubble");
     wordSpans = [];
 
     const walker = document.createTreeWalker(
@@ -134,21 +136,19 @@ function prepareChatElement(element) {
     buildSentenceChunks();
 }
 
-// Chunking Logic: Splits text into ~150-200 character sentence groups
+// Chunk complete response into smaller, reliable text blocks
 function buildSentenceChunks() {
     textChunks = [];
     chunkStartWordIndices = [];
 
     let currentChunkWords = [];
     let currentLength = 0;
-    let startIndex = 0;
 
     wordSpans.forEach((span, index) => {
         const word = span.innerText;
         currentChunkWords.push(word);
         currentLength += word.length + 1;
 
-        // Chunk boundary: Punctuation OR word count cap
         const isSentenceEnd = /[.!?]$/.test(word.trim());
         if ((isSentenceEnd && currentLength > 80) || currentLength > 200) {
             if (textChunks.length === 0) chunkStartWordIndices.push(0);
@@ -163,22 +163,31 @@ function buildSentenceChunks() {
     });
 
     if (currentChunkWords.length > 0) {
+        if (textChunks.length === 0) chunkStartWordIndices.push(0);
         textChunks.push(currentChunkWords.join(" "));
     }
+
+    updateTotalTimeDisplay();
 }
 
-// Speak Chunks Sequentially
-function speakChat(chatElement) {
+// Speak full response chunk by chunk
+function speakFullResponse(chatElement) {
     window.speechSynthesis.cancel();
-    prepareChatElement(chatElement);
-    currentChunkIndex = 0;
-    playChunk(0);
+    setLoadingState(true);
+
+    setTimeout(() => {
+        prepareFullResponse(chatElement);
+        currentChunkIndex = 0;
+        currentWordIndex = 0;
+        playChunk(0);
+    }, 50);
 }
 
 function playChunk(index) {
     if (index >= textChunks.length) {
         clearHighlights();
-        document.getElementById("kk-play").innerText = "▶";
+        setPlayerState("IDLE");
+        updateProgressUI(100);
         return;
     }
 
@@ -191,6 +200,11 @@ function playChunk(index) {
 
     const baseWordIndex = chunkStartWordIndices[index] || 0;
 
+    utterance.onstart = () => {
+        setLoadingState(false);
+        setPlayerState("PLAYING");
+    };
+
     utterance.onboundary = (event) => {
         if (event.name === "word") {
             highlightWordAtOffset(baseWordIndex, event.charIndex);
@@ -198,16 +212,21 @@ function playChunk(index) {
     };
 
     utterance.onend = () => {
-        playChunk(index + 1);
+        if (playerState === "PLAYING") {
+            playChunk(index + 1);
+        }
     };
 
     window.speechSynthesis.speak(utterance);
-    document.getElementById("kk-play").innerText = "⏸";
-
-    // Smoothly keep chat block centered
-    chatElement.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (currentChatElement) {
+        currentChatElement.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest",
+        });
+    }
 }
 
+// Dynamic Word Highlighting
 function highlightWordAtOffset(baseIndex, charIndex) {
     clearHighlights();
 
@@ -224,6 +243,11 @@ function highlightWordAtOffset(baseIndex, charIndex) {
                 behavior: "smooth",
                 block: "nearest",
             });
+
+            const pct = Math.floor(
+                (currentWordIndex / Math.max(1, wordSpans.length - 1)) * 100,
+            );
+            updateProgressUI(pct);
             break;
         }
         accumulatedLength += wordLength + 1;
@@ -234,19 +258,64 @@ function clearHighlights() {
     wordSpans.forEach((span) => span.classList.remove("kokoro-word-highlight"));
 }
 
-// Seek Backward / Forward
-function seekWords(wordOffset) {
+// State Machine Handling Play / Pause / Load
+function togglePlayPause() {
+    if (playerState === "PLAYING") {
+        window.speechSynthesis.pause();
+        setPlayerState("PAUSED");
+    } else if (playerState === "PAUSED") {
+        window.speechSynthesis.resume();
+        setPlayerState("PLAYING");
+    } else if (currentChatElement) {
+        speakFullResponse(currentChatElement);
+    }
+}
+
+function setLoadingState(isLoading) {
+    const playBtn = document.getElementById("kk-play");
+    if (!playBtn) return;
+
+    if (isLoading) {
+        playerState = "LOADING";
+        playBtn.innerHTML = '<div class="kokoro-spinner"></div>';
+    }
+}
+
+function setPlayerState(state) {
+    playerState = state;
+    const playBtn = document.getElementById("kk-play");
+    if (!playBtn) return;
+
+    if (state === "PLAYING") {
+        playBtn.innerText = "⏸";
+    } else if (state === "PAUSED" || state === "IDLE") {
+        playBtn.innerText = "▶";
+    }
+}
+
+// Seeking Controls & Progress Bar
+function seekRelative(offsetWords) {
     if (!wordSpans.length) return;
-
-    const newTargetIndex = Math.max(
+    const targetIndex = Math.max(
         0,
-        Math.min(wordSpans.length - 1, currentWordIndex + wordOffset),
+        Math.min(wordSpans.length - 1, currentWordIndex + offsetWords),
     );
+    seekToWordIndex(targetIndex);
+}
 
-    // Find matching chunk index for target word
+function handleSeekBarInput(e) {
+    if (!wordSpans.length) return;
+    const pct = parseFloat(e.target.value);
+    const targetIndex = Math.floor((pct / 100) * (wordSpans.length - 1));
+    seekToWordIndex(targetIndex);
+}
+
+function seekToWordIndex(targetIndex) {
+    currentWordIndex = targetIndex;
+
     let targetChunk = 0;
     for (let i = 0; i < chunkStartWordIndices.length; i++) {
-        if (newTargetIndex >= chunkStartWordIndices[i]) {
+        if (targetIndex >= chunkStartWordIndices[i]) {
             targetChunk = i;
         } else {
             break;
@@ -254,23 +323,38 @@ function seekWords(wordOffset) {
     }
 
     window.speechSynthesis.cancel();
-    playChunk(targetChunk);
+    setLoadingState(true);
+    setTimeout(() => {
+        playChunk(targetChunk);
+    }, 50);
 }
 
-function togglePlayPause() {
-    if (window.speechSynthesis.speaking) {
-        if (window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
-            document.getElementById("kk-play").innerText = "⏸";
-        } else {
-            window.speechSynthesis.pause();
-            document.getElementById("kk-play").innerText = "▶";
-        }
-    } else if (currentChatElement) {
-        speakChat(currentChatElement);
-    }
+function updateProgressUI(pct) {
+    const seekBar = document.getElementById("kk-seekbar");
+    const timeCur = document.getElementById("kk-time-cur");
+    if (seekBar) seekBar.value = pct;
+
+    const totalWords = wordSpans.length || 1;
+    const totalSecs = Math.floor(totalWords / 2.5);
+    const currentSecs = Math.floor((pct / 100) * totalSecs);
+
+    if (timeCur) timeCur.innerText = formatTime(currentSecs);
 }
 
+function updateTotalTimeDisplay() {
+    const timeTot = document.getElementById("kk-time-tot");
+    const totalWords = wordSpans.length || 0;
+    const totalSecs = Math.floor(totalWords / 2.5);
+    if (timeTot) timeTot.innerText = formatTime(totalSecs);
+}
+
+function formatTime(secs) {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+// Selector for assistant responses
 function getAllChatBubbles() {
     return Array.from(
         document.querySelectorAll(
@@ -282,19 +366,19 @@ function getAllChatBubbles() {
 function readNextChat() {
     const chats = getAllChatBubbles();
     const idx = chats.indexOf(currentChatElement);
-    if (idx < chats.length - 1) speakChat(chats[idx + 1]);
+    if (idx < chats.length - 1) speakFullResponse(chats[idx + 1]);
 }
 
 function readPreviousChat() {
     const chats = getAllChatBubbles();
     const idx = chats.indexOf(currentChatElement);
-    if (idx > 0) speakChat(chats[idx - 1]);
+    if (idx > 0) speakFullResponse(chats[idx - 1]);
 }
 
 chrome.runtime.onMessage.addListener((request) => {
     if (request.action === "READ_CURRENT_CHAT") {
         injectControlBar();
         const chats = getAllChatBubbles();
-        if (chats.length) speakChat(chats[chats.length - 1]);
+        if (chats.length) speakFullResponse(chats[chats.length - 1]);
     }
 });
