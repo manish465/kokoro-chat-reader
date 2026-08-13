@@ -35,7 +35,7 @@
     bottom: 30px;
     right: 30px;
     z-index: 999999;
-    background: rgba(18, 18, 26, 0.92);
+    background: rgba(18, 18, 26, 0.94);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.14);
@@ -53,6 +53,21 @@
         -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     user-select: none;
     box-sizing: border-box;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Collapsed Mini Player Pill State */
+#kokoro-control-bar.mini {
+    width: auto;
+    padding: 8px 12px;
+    border-radius: 30px;
+}
+
+#kokoro-control-bar.mini .kokoro-now-playing,
+#kokoro-control-bar.mini .kokoro-progress-container,
+#kokoro-control-bar.mini .kokoro-settings-row,
+#kokoro-control-bar.mini .kokoro-btn:not(#kk-play):not(#kk-mini-toggle) {
+    display: none !important;
 }
 
 /* Now Playing Dropdown Container */
@@ -90,7 +105,6 @@
 .kokoro-dropdown-arrow {
     font-size: 9px;
     color: #9ca3af;
-    transition: transform 0.2s ease;
 }
 
 /* Dropdown Menu List */
@@ -124,7 +138,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: background 0.15s;
 }
 
 .kokoro-dropdown-item:hover {
@@ -164,15 +177,15 @@
     background: rgba(255, 255, 255, 0.06);
     color: #e5e7eb;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s ease;
-    font-size: 13px;
+    font-size: 12px;
 }
 
 .kokoro-btn:hover {
@@ -184,20 +197,50 @@
     background: linear-gradient(135deg, #6366f1, #a855f7);
     border: none;
     color: #fff;
-    width: 38px;
-    height: 38px;
+    width: 36px;
+    height: 36px;
 }
 
+.kokoro-btn-toggle {
+    border-radius: 12px;
+    padding: 2px 8px;
+    width: auto;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.kokoro-btn-toggle.active {
+    background: rgba(168, 85, 247, 0.35);
+    color: #c084fc;
+    border-color: rgba(168, 85, 247, 0.5);
+}
+
+/* Settings Row (Voice + Speed) */
+.kokoro-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.kokoro-voice-select,
 .kokoro-speed-select {
     background: rgba(255, 255, 255, 0.06);
     color: #a7f3d0;
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 4px 6px;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     outline: none;
     cursor: pointer;
+}
+
+.kokoro-voice-select {
+    flex: 1;
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Progress Slider */
