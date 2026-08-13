@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+    <head>
+        <style>
+            body {
+                width: 220px;
+                font-family: sans-serif;
+                padding: 12px;
+                margin: 0;
+                background-color: #1e1e2e;
+                color: #fff;
+            }
+            label {
+                font-size: 12px;
+                margin-top: 8px;
+                display: block;
+                color: #a6adc8;
+            }
+            select,
+            button {
+                width: 100%;
+                margin-top: 6px;
+                padding: 8px;
+                border-radius: 6px;
+                border: none;
+            }
+            button {
+                background: #89b4fa;
+                color: #11111b;
+                font-weight: bold;
+                cursor: pointer;
+            }
+            button:hover {
+                background: #74c7ec;
+            }
+        </style>
+    </head>
+    <body>
+        <h3>Kokoro TTS Reader</h3>
+        <label for="voiceSelect">Voice (Kokoro-82M)</label>
+        <select id="voiceSelect">
+            <option value="af_heart">af_heart (American Female)</option>
+            <option value="af_sky">af_sky (American Female)</option>
+            <option value="am_adam">am_adam (American Male)</option>
+            <option value="bf_emma">bf_emma (British Female)</option>
+        </select>
+
+        <label for="speedSelect">Speed</label>
+        <select id="speedSelect">
+            <option value="0.8">0.8x</option>
+            <option value="1.0" selected>1.0x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+        </select>
+
+        <button id="readBtn">Read Selected Chat</button>
+
+        <script src="popup.js"></script>
+    </body>
+</html>

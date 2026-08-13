@@ -1,0 +1,32 @@
+{
+    "manifest_version": 3,
+    "name": "Kokoro Reader - Chat TTS",
+    "version": "1.0.0",
+    "description": "Read chat messages one at a time with Kokoro TTS, word highlighting, and playback controls.",
+    "permissions": ["activeTab", "scripting", "storage"],
+    "host_permissions": [
+        "*://chatgpt.com/*",
+        "*://claude.ai/*",
+        "*://*.deepseek.com/*"
+    ],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://chatgpt.com/*",
+                "*://claude.ai/*",
+                "*://*.deepseek.com/*"
+            ],
+            "css": ["styles.css"],
+            "js": ["content.js"]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": ["lib/*"],
+            "matches": ["<all_urls>"]
+        }
+    ]
+}
