@@ -7,35 +7,41 @@ let playerState = "IDLE"; // 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED'
 let controlBar = null;
 
 let isSkipCodeEnabled = true;
-let isAutoPlayEnabled = false;
 
 // Progress & Timer Tracking
 let timerInterval = null;
 let currentElapsedSecs = 0;
 let estimatedTotalSecs = 0;
 
-// Auto-play detector state
-let observedChatCount = 0;
-
 // Load Saved Preferences on startup
 loadUserPreferences();
 
-// Periodically check for new response bubbles & auto-play if enabled
+// Initial scan for inline Read buttons ONLY
+injectInlinePlayButtons();
+setupMutationObserver();
+
+// Periodic backup scan to add buttons to new messages
 setInterval(() => {
     injectInlinePlayButtons();
-    checkAutoPlayNewResponse();
 }, 1500);
 
 function injectInlinePlayButtons() {
     const chats = getAllChatBubbles();
     chats.forEach((chat, index) => {
+        chat.classList.add("kokoro-chat-clearfix");
+
         if (chat.querySelector(".kokoro-inline-play-btn")) return;
 
-        const btn = document.createElement("div");
+        const btn = document.createElement("button");
         btn.className = "kokoro-inline-play-btn";
-        btn.innerHTML = `▶ Read Response #${index + 1}`;
+        btn.type = "button";
+        btn.innerHTML = `▶ Read #${index + 1}`;
+        btn.title = "Read this response";
+
         btn.onclick = (e) => {
             e.stopPropagation();
+            e.preventDefault();
+            // Player is injected ONLY on user click
             injectControlBar();
             speakFullResponse(chat);
         };
@@ -44,22 +50,19 @@ function injectInlinePlayButtons() {
     });
 }
 
-function checkAutoPlayNewResponse() {
-    const chats = getAllChatBubbles();
-    if (chats.length > observedChatCount) {
-        const isStreaming = document.querySelector(
-            ".result-streaming, .streaming",
-        );
-        if (!isStreaming && isAutoPlayEnabled && observedChatCount > 0) {
-            const newestChat = chats[chats.length - 1];
-            injectControlBar();
-            speakFullResponse(newestChat);
-        }
-        observedChatCount = chats.length;
-    }
+// MutationObserver purely for injecting buttons onto new responses
+function setupMutationObserver() {
+    const observer = new MutationObserver(() => {
+        injectInlinePlayButtons();
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+    });
 }
 
-// Inject Floating Control Bar
+// Inject Floating Control Bar ONLY on user interaction
 function injectControlBar() {
     if (document.getElementById("kokoro-control-bar")) return;
 
@@ -97,8 +100,7 @@ function injectControlBar() {
         <option value="1.25">1.25x</option>
         <option value="1.5">1.5x</option>
       </select>
-      <button class="kokoro-btn kokoro-btn-toggle active" id="kk-code-toggle" title="Skip Code Blocks">&lt;/&gt; Skip Code</button>
-      <button class="kokoro-btn kokoro-btn-toggle" id="kk-auto-toggle" title="Auto-play New Responses">⚡ Auto</button>
+      <button class="kokoro-btn kokoro-btn-toggle ${isSkipCodeEnabled ? "active" : ""}" id="kk-code-toggle" title="Skip Code Blocks">&lt;/&gt; Skip Code</button>
     </div>
 
     <div class="kokoro-progress-container">
@@ -127,7 +129,12 @@ function injectControlBar() {
     document.getElementById("kk-prev").onclick = readPreviousChat;
     document.getElementById("kk-mini-toggle").onclick = toggleMiniMode;
 
-    document.getElementById("kk-speed").onchange = (e) => {
+    const speedSelect = document.getElementById("kk-speed");
+    chrome.storage.local.get(["speed"], (res) => {
+        if (res.speed) speedSelect.value = res.speed;
+    });
+
+    speedSelect.onchange = (e) => {
         savePreference("speed", e.target.value);
     };
 
@@ -136,13 +143,6 @@ function injectControlBar() {
         isSkipCodeEnabled = !isSkipCodeEnabled;
         codeToggle.classList.toggle("active", isSkipCodeEnabled);
         savePreference("skipCode", isSkipCodeEnabled);
-    };
-
-    const autoToggle = document.getElementById("kk-auto-toggle");
-    autoToggle.onclick = () => {
-        isAutoPlayEnabled = !isAutoPlayEnabled;
-        autoToggle.classList.toggle("active", isAutoPlayEnabled);
-        savePreference("autoPlay", isAutoPlayEnabled);
     };
 
     document.getElementById("kk-np-box").onclick = toggleDropdown;
@@ -168,20 +168,8 @@ function savePreference(key, val) {
 function loadUserPreferences() {
     if (!chrome.storage || !chrome.storage.local) return;
 
-    chrome.storage.local.get(["speed", "skipCode", "autoPlay"], (res) => {
+    chrome.storage.local.get(["skipCode"], (res) => {
         if (res.skipCode !== undefined) isSkipCodeEnabled = res.skipCode;
-        if (res.autoPlay !== undefined) isAutoPlayEnabled = res.autoPlay;
-
-        const speedSelect = document.getElementById("kk-speed");
-        if (speedSelect && res.speed) speedSelect.value = res.speed;
-
-        const codeToggle = document.getElementById("kk-code-toggle");
-        if (codeToggle)
-            codeToggle.classList.toggle("active", isSkipCodeEnabled);
-
-        const autoToggle = document.getElementById("kk-auto-toggle");
-        if (autoToggle)
-            autoToggle.classList.toggle("active", isAutoPlayEnabled);
     });
 }
 
@@ -200,11 +188,7 @@ function toggleDropdown(e) {
     dropdown.innerHTML = "";
 
     chats.forEach((chat, index) => {
-        const snippet =
-            chat.innerText
-                .replace(/▶ Read Response #\d+/, "")
-                .trim()
-                .slice(0, 45) + "...";
+        const snippet = getCleanTextFromChat(chat).slice(0, 45) + "...";
         const item = document.createElement("div");
         item.className =
             "kokoro-dropdown-item" +
@@ -223,7 +207,7 @@ function toggleDropdown(e) {
     dropdown.classList.add("show");
 }
 
-// Draggable Engine with Persistent Coordinates
+// Draggable Engine
 function makeDraggable(element, handle) {
     let offsetX = 0,
         offsetY = 0;
@@ -257,15 +241,12 @@ function makeDraggable(element, handle) {
     };
 }
 
-// Text Preparation & Smart Code Filtering
-function prepareTextChunks(element) {
-    currentChatElement = element;
-
+// Clean Text Extractor
+function getCleanTextFromChat(element) {
     const clone = element.cloneNode(true);
     const inlineBtn = clone.querySelector(".kokoro-inline-play-btn");
     if (inlineBtn) inlineBtn.remove();
 
-    // Smart Code Filtering
     if (isSkipCodeEnabled) {
         const codeBlocks = clone.querySelectorAll("pre, code");
         codeBlocks.forEach((block) => {
@@ -273,12 +254,20 @@ function prepareTextChunks(element) {
         });
     }
 
-    const cleanText = clone.innerText.trim();
+    return clone.innerText.trim();
+}
+
+// Text Preparation
+function prepareTextChunks(element) {
+    currentChatElement = element;
+
+    const cleanText = getCleanTextFromChat(element);
     const fullTextWords = cleanText.split(/\s+/);
 
     // Set Now Playing Title
     const snippet = cleanText.slice(0, 35) + "...";
-    document.getElementById("kk-np-text").innerText = snippet;
+    const npText = document.getElementById("kk-np-text");
+    if (npText) npText.innerText = snippet;
 
     // Active Button State
     document
@@ -287,7 +276,7 @@ function prepareTextChunks(element) {
     const activeBtn = element.querySelector(".kokoro-inline-play-btn");
     if (activeBtn) activeBtn.classList.add("active");
 
-    // Estimate total time based on word count & playback rate
+    // Estimate total time
     const speed = parseFloat(document.getElementById("kk-speed")?.value || 1.0);
     estimatedTotalSecs = Math.max(
         1,
@@ -379,7 +368,7 @@ function updateProgressUI() {
     if (timeCur) timeCur.innerText = formatTime(Math.floor(currentElapsedSecs));
 }
 
-// States Management
+// Play/Pause State Management
 function togglePlayPause() {
     if (playerState === "PLAYING") {
         window.speechSynthesis.pause();
