@@ -6,8 +6,6 @@ let currentChunkIndex = 0;
 let playerState = "IDLE"; // 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED'
 let controlBar = null;
 
-let availableVoices = [];
-let selectedVoiceName = "";
 let isSkipCodeEnabled = true;
 let isAutoPlayEnabled = false;
 
@@ -67,8 +65,7 @@ function injectControlBar() {
 
     controlBar = document.createElement("div");
     controlBar.id = "kokoro-control-bar";
-    controlBar.innerHTML =
-        `
+    controlBar.innerHTML = `
     <div class="kokoro-now-playing" id="kk-np-box">
       <div class="kokoro-np-header">
         <div class="kokoro-now-playing-text" id="kk-np-text">Select response...</div>
@@ -94,18 +91,13 @@ function injectControlBar() {
     </div>
 
     <div class="kokoro-settings-row">
-      <select class="kokoro-voice-select" id="kk-voice-select" title="Voice Selection">
-        <option value="">Loading voices...</option>
-      </select>
       <select class="kokoro-speed-select" id="kk-speed" title="Speed">
         <option value="0.8">0.8x</option>
         <option value="1.0" selected>1.0x</option>
         <option value="1.25">1.25x</option>
         <option value="1.5">1.5x</option>
       </select>
-      <button class="kokoro-btn kokoro-btn-toggle active" id="kk-code-toggle" title="Skip Code Blocks">` +
-        `</` +
-        `></button>
+      <button class="kokoro-btn kokoro-btn-toggle active" id="kk-code-toggle" title="Skip Code Blocks">&lt;/&gt; Skip Code</button>
       <button class="kokoro-btn kokoro-btn-toggle" id="kk-auto-toggle" title="Auto-play New Responses">⚡ Auto</button>
     </div>
 
@@ -117,7 +109,7 @@ function injectControlBar() {
   `;
     document.body.appendChild(controlBar);
 
-    // Restore position from storage
+    // Restore saved position
     chrome.storage.local.get(["playerPosLeft", "playerPosTop"], (res) => {
         if (res.playerPosLeft && res.playerPosTop) {
             controlBar.style.left = res.playerPosLeft;
@@ -134,12 +126,6 @@ function injectControlBar() {
     document.getElementById("kk-next").onclick = readNextChat;
     document.getElementById("kk-prev").onclick = readPreviousChat;
     document.getElementById("kk-mini-toggle").onclick = toggleMiniMode;
-
-    // Settings Events
-    document.getElementById("kk-voice-select").onchange = (e) => {
-        selectedVoiceName = e.target.value;
-        savePreference("selectedVoice", selectedVoiceName);
-    };
 
     document.getElementById("kk-speed").onchange = (e) => {
         savePreference("speed", e.target.value);
@@ -162,35 +148,7 @@ function injectControlBar() {
     document.getElementById("kk-np-box").onclick = toggleDropdown;
     document.getElementById("kk-seekbar").oninput = handleSeekBarInput;
 
-    populateVoices();
     makeDraggable(controlBar, document.getElementById("kk-drag"));
-}
-
-// Voice Selector Logic
-function populateVoices() {
-    const voiceSelect = document.getElementById("kk-voice-select");
-    if (!voiceSelect) return;
-
-    availableVoices = window.speechSynthesis.getVoices();
-
-    if (availableVoices.length === 0) {
-        window.speechSynthesis.onvoiceschanged = populateVoices;
-        return;
-    }
-
-    voiceSelect.innerHTML = "";
-    availableVoices.forEach((voice) => {
-        const option = document.createElement("option");
-        option.value = voice.name;
-        option.innerText = `${voice.name} (${voice.lang})`;
-        if (
-            voice.name === selectedVoiceName ||
-            (voice.default && !selectedVoiceName)
-        ) {
-            option.selected = true;
-        }
-        voiceSelect.appendChild(option);
-    });
 }
 
 // Mini / Minimize Mode Toggle
@@ -210,25 +168,21 @@ function savePreference(key, val) {
 function loadUserPreferences() {
     if (!chrome.storage || !chrome.storage.local) return;
 
-    chrome.storage.local.get(
-        ["selectedVoice", "speed", "skipCode", "autoPlay"],
-        (res) => {
-            if (res.selectedVoice) selectedVoiceName = res.selectedVoice;
-            if (res.skipCode !== undefined) isSkipCodeEnabled = res.skipCode;
-            if (res.autoPlay !== undefined) isAutoPlayEnabled = res.autoPlay;
+    chrome.storage.local.get(["speed", "skipCode", "autoPlay"], (res) => {
+        if (res.skipCode !== undefined) isSkipCodeEnabled = res.skipCode;
+        if (res.autoPlay !== undefined) isAutoPlayEnabled = res.autoPlay;
 
-            const speedSelect = document.getElementById("kk-speed");
-            if (speedSelect && res.speed) speedSelect.value = res.speed;
+        const speedSelect = document.getElementById("kk-speed");
+        if (speedSelect && res.speed) speedSelect.value = res.speed;
 
-            const codeToggle = document.getElementById("kk-code-toggle");
-            if (codeToggle)
-                codeToggle.classList.toggle("active", isSkipCodeEnabled);
+        const codeToggle = document.getElementById("kk-code-toggle");
+        if (codeToggle)
+            codeToggle.classList.toggle("active", isSkipCodeEnabled);
 
-            const autoToggle = document.getElementById("kk-auto-toggle");
-            if (autoToggle)
-                autoToggle.classList.toggle("active", isAutoPlayEnabled);
-        },
-    );
+        const autoToggle = document.getElementById("kk-auto-toggle");
+        if (autoToggle)
+            autoToggle.classList.toggle("active", isAutoPlayEnabled);
+    });
 }
 
 // Toggle & Populate Dropdown Menu
@@ -311,7 +265,7 @@ function prepareTextChunks(element) {
     const inlineBtn = clone.querySelector(".kokoro-inline-play-btn");
     if (inlineBtn) inlineBtn.remove();
 
-    // Smart Code Filtering: Replace pre/code tags with simple placeholders
+    // Smart Code Filtering
     if (isSkipCodeEnabled) {
         const codeBlocks = clone.querySelectorAll("pre, code");
         codeBlocks.forEach((block) => {
@@ -375,14 +329,6 @@ function playChunk(index) {
 
     const utterance = new SpeechSynthesisUtterance(chunkText);
     utterance.rate = rate;
-
-    // Voice Selection Application
-    if (selectedVoiceName && availableVoices.length > 0) {
-        const matchedVoice = availableVoices.find(
-            (v) => v.name === selectedVoiceName,
-        );
-        if (matchedVoice) utterance.voice = matchedVoice;
-    }
 
     utterance.onstart = () => {
         setLoadingState(false);

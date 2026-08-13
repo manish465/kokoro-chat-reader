@@ -40,7 +40,7 @@
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.14);
     color: #f3f4f6;
-    padding: 12px 16px;
+    padding: 12px 14px;
     border-radius: 20px;
     box-shadow:
         0 20px 40px rgba(0, 0, 0, 0.5),
@@ -156,12 +156,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
+    gap: 4px;
 }
 
 .kokoro-drag-handle {
     cursor: grab;
-    padding: 4px;
+    padding: 2px;
     color: #6b7280;
     display: flex;
     align-items: center;
@@ -177,15 +177,16 @@
     background: rgba(255, 255, 255, 0.06);
     color: #e5e7eb;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s ease;
-    font-size: 12px;
+    font-size: 11px;
+    flex-shrink: 0;
 }
 
 .kokoro-btn:hover {
@@ -197,32 +198,19 @@
     background: linear-gradient(135deg, #6366f1, #a855f7);
     border: none;
     color: #fff;
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
+    font-size: 12px;
 }
 
-.kokoro-btn-toggle {
-    border-radius: 12px;
-    padding: 2px 8px;
-    width: auto;
-    font-size: 10px;
-    font-weight: 700;
-}
-
-.kokoro-btn-toggle.active {
-    background: rgba(168, 85, 247, 0.35);
-    color: #c084fc;
-    border-color: rgba(168, 85, 247, 0.5);
-}
-
-/* Settings Row (Voice + Speed) */
+/* Settings Row (Speed + Toggles) */
 .kokoro-settings-row {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 6px;
 }
 
-.kokoro-voice-select,
 .kokoro-speed-select {
     background: rgba(255, 255, 255, 0.06);
     color: #a7f3d0;
@@ -235,12 +223,21 @@
     cursor: pointer;
 }
 
-.kokoro-voice-select {
-    flex: 1;
-    max-width: 220px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.kokoro-btn-toggle {
+    border-radius: 12px;
+    padding: 4px 8px;
+    width: auto;
+    font-size: 10px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.04);
+    color: #9ca3af;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.kokoro-btn-toggle.active {
+    background: rgba(168, 85, 247, 0.25);
+    color: #c084fc;
+    border-color: rgba(168, 85, 247, 0.5);
 }
 
 /* Progress Slider */
