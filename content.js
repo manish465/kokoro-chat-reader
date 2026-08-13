@@ -1,12 +1,15 @@
 // --- State Management ---
 let currentChatElement = null;
-let fullTextWords = [];
 let textChunks = [];
 let currentChunkIndex = 0;
-let currentWordIndex = 0;
 
 let playerState = "IDLE"; // 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED'
 let controlBar = null;
+
+// Progress & Timer Tracking
+let timerInterval = null;
+let currentElapsedSecs = 0;
+let estimatedTotalSecs = 0;
 
 // Periodically look for chat bubbles to append inline play buttons
 setInterval(() => {
@@ -54,9 +57,9 @@ function injectControlBar() {
         </svg>
       </div>
       <button class="kokoro-btn" id="kk-prev" title="Previous Response">⏮</button>
-      <button class="kokoro-btn" id="kk-rw" title="Rewind">⏪</button>
+      <button class="kokoro-btn" id="kk-rw" title="-10s Rewind">⏪</button>
       <button class="kokoro-btn kokoro-btn-primary" id="kk-play" title="Play/Pause">▶</button>
-      <button class="kokoro-btn" id="kk-ff" title="Forward">⏩</button>
+      <button class="kokoro-btn" id="kk-ff" title="+10s Forward">⏩</button>
       <button class="kokoro-btn" id="kk-next" title="Next Response">⏭</button>
       <select class="kokoro-speed-select" id="kk-speed">
         <option value="0.8">0.8x</option>
@@ -67,7 +70,7 @@ function injectControlBar() {
     </div>
     <div class="kokoro-progress-container">
       <span id="kk-time-cur">0:00</span>
-      <input type="range" class="kokoro-seek-bar" id="kk-seekbar" value="0" min="0" max="100" step="1" />
+      <input type="range" class="kokoro-seek-bar" id="kk-seekbar" value="0" min="0" max="100" step="0.1" />
       <span id="kk-time-tot">0:00</span>
     </div>
   `;
@@ -89,7 +92,7 @@ function injectControlBar() {
     makeDraggable(controlBar, document.getElementById("kk-drag"));
 }
 
-// Toggle & Populate Now Playing Dropdown List
+// Toggle & Populate Dropdown
 function toggleDropdown(e) {
     e.stopPropagation();
     const dropdown = document.getElementById("kk-dropdown");
@@ -157,50 +160,61 @@ function makeDraggable(element, handle) {
     };
 }
 
-// Prepare & Chunk Text (Clean, standard text retrieval without spans)
+// Prepare & Chunk Text
 function prepareTextChunks(element) {
     currentChatElement = element;
 
-    // Clone element to strip out inline play button text
     const clone = element.cloneNode(true);
     const inlineBtn = clone.querySelector(".kokoro-inline-play-btn");
     if (inlineBtn) inlineBtn.remove();
 
     const cleanText = clone.innerText.trim();
-    fullTextWords = cleanText.split(/\s+/);
+    const fullTextWords = cleanText.split(/\s+/);
 
-    // Update Now Playing Title Snippet
+    // Title Snippet
     const snippet = cleanText.slice(0, 35) + "...";
     document.getElementById("kk-np-text").innerText = snippet;
 
-    // Highlight Active Inline Button State
+    // Highlight Active Inline Button
     document
         .querySelectorAll(".kokoro-inline-play-btn")
         .forEach((btn) => btn.classList.remove("active"));
     const activeBtn = element.querySelector(".kokoro-inline-play-btn");
     if (activeBtn) activeBtn.classList.add("active");
 
+    // Estimate total time dynamically based on word count & playback speed
+    const speed = parseFloat(document.getElementById("kk-speed").value || 1.0);
+    estimatedTotalSecs = Math.max(
+        1,
+        Math.round(fullTextWords.length / 3 / speed),
+    );
+
+    const timeTot = document.getElementById("kk-time-tot");
+    if (timeTot) timeTot.innerText = formatTime(estimatedTotalSecs);
+
     // Sentence Chunking
     textChunks = cleanText.match(/[^.!?]+[.!?]+|\S+/g) || [cleanText];
-    updateTotalTimeDisplay();
 }
 
 function speakFullResponse(chatElement) {
+    stopTimer();
     window.speechSynthesis.cancel();
     setLoadingState(true);
 
     setTimeout(() => {
         prepareTextChunks(chatElement);
         currentChunkIndex = 0;
-        currentWordIndex = 0;
+        currentElapsedSecs = 0;
         playChunk(0);
     }, 50);
 }
 
 function playChunk(index) {
     if (index >= textChunks.length) {
+        stopTimer();
         setPlayerState("IDLE");
-        updateProgressUI(100);
+        currentElapsedSecs = estimatedTotalSecs;
+        updateProgressUI();
         return;
     }
 
@@ -214,16 +228,7 @@ function playChunk(index) {
     utterance.onstart = () => {
         setLoadingState(false);
         setPlayerState("PLAYING");
-    };
-
-    utterance.onboundary = (event) => {
-        if (event.name === "word") {
-            currentWordIndex += 1;
-            const pct = Math.floor(
-                (currentWordIndex / Math.max(1, fullTextWords.length)) * 100,
-            );
-            updateProgressUI(pct);
-        }
+        startTimer();
     };
 
     utterance.onend = () => {
@@ -232,16 +237,56 @@ function playChunk(index) {
         }
     };
 
+    utterance.onerror = () => {
+        if (playerState === "PLAYING") {
+            playChunk(index + 1);
+        }
+    };
+
     window.speechSynthesis.speak(utterance);
+}
+
+// Timer Engine for Seek Bar and Time Display
+function startTimer() {
+    if (timerInterval) return;
+
+    timerInterval = setInterval(() => {
+        if (playerState === "PLAYING") {
+            currentElapsedSecs += 0.1;
+            if (currentElapsedSecs > estimatedTotalSecs) {
+                currentElapsedSecs = estimatedTotalSecs;
+            }
+            updateProgressUI();
+        }
+    }, 100);
+}
+
+function stopTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+}
+
+function updateProgressUI() {
+    const seekBar = document.getElementById("kk-seekbar");
+    const timeCur = document.getElementById("kk-time-cur");
+
+    const pct = (currentElapsedSecs / estimatedTotalSecs) * 100;
+
+    if (seekBar) seekBar.value = Math.min(100, pct);
+    if (timeCur) timeCur.innerText = formatTime(Math.floor(currentElapsedSecs));
 }
 
 // States Management
 function togglePlayPause() {
     if (playerState === "PLAYING") {
         window.speechSynthesis.pause();
+        stopTimer();
         setPlayerState("PAUSED");
     } else if (playerState === "PAUSED") {
         window.speechSynthesis.resume();
+        startTimer();
         setPlayerState("PLAYING");
     } else if (currentChatElement) {
         speakFullResponse(currentChatElement);
@@ -270,53 +315,38 @@ function setPlayerState(state) {
     }
 }
 
-// Seeking & Progress Bar
-function seekRelative(offsetWords) {
-    if (!fullTextWords.length) return;
-    const targetIndex = Math.max(
+// Seeking Handling
+function seekRelative(secondsOffset) {
+    if (!estimatedTotalSecs) return;
+    const targetTime = Math.max(
         0,
-        Math.min(fullTextWords.length - 1, currentWordIndex + offsetWords),
+        Math.min(estimatedTotalSecs, currentElapsedSecs + secondsOffset),
     );
-    seekToWordIndex(targetIndex);
+    seekToTime(targetTime);
 }
 
 function handleSeekBarInput(e) {
-    if (!fullTextWords.length) return;
+    if (!estimatedTotalSecs) return;
     const pct = parseFloat(e.target.value);
-    const targetIndex = Math.floor((pct / 100) * (fullTextWords.length - 1));
-    seekToWordIndex(targetIndex);
+    const targetTime = (pct / 100) * estimatedTotalSecs;
+    seekToTime(targetTime);
 }
 
-function seekToWordIndex(targetIndex) {
-    currentWordIndex = targetIndex;
-    const chunkTarget = Math.floor(
-        (targetIndex / fullTextWords.length) * textChunks.length,
-    );
+function seekToTime(targetTimeSecs) {
+    currentElapsedSecs = targetTimeSecs;
 
+    // Calculate corresponding chunk index based on target time ratio
+    const ratio = currentElapsedSecs / estimatedTotalSecs;
+    const targetChunk = Math.floor(ratio * textChunks.length);
+
+    stopTimer();
     window.speechSynthesis.cancel();
     setLoadingState(true);
+    updateProgressUI();
+
     setTimeout(() => {
-        playChunk(chunkTarget);
+        playChunk(Math.min(textChunks.length - 1, targetChunk));
     }, 50);
-}
-
-function updateProgressUI(pct) {
-    const seekBar = document.getElementById("kk-seekbar");
-    const timeCur = document.getElementById("kk-time-cur");
-    if (seekBar) seekBar.value = pct;
-
-    const totalWords = fullTextWords.length || 1;
-    const totalSecs = Math.floor(totalWords / 2.5);
-    const currentSecs = Math.floor((pct / 100) * totalSecs);
-
-    if (timeCur) timeCur.innerText = formatTime(currentSecs);
-}
-
-function updateTotalTimeDisplay() {
-    const timeTot = document.getElementById("kk-time-tot");
-    const totalWords = fullTextWords.length || 0;
-    const totalSecs = Math.floor(totalWords / 2.5);
-    if (timeTot) timeTot.innerText = formatTime(totalSecs);
 }
 
 function formatTime(secs) {
