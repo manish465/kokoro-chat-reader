@@ -156,6 +156,7 @@ function injectControlBar() {
           <circle cx="4" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/>
         </svg>
       </div>
+      <button class="kokoro-btn kokoro-btn-toggle ${isAutoScrollEnabled ? "active" : ""}" id="kk-scroll-toggle-mini" title="Toggle Auto Scroll">📜</button>
       <button class="kokoro-btn" id="kk-prev" title="Previous Response">⏮</button>
       <button class="kokoro-btn" id="kk-rw" title="-10s Rewind">⏪</button>
       <button class="kokoro-btn kokoro-btn-primary" id="kk-play" title="Play/Pause">▶</button>
@@ -221,12 +222,22 @@ function injectControlBar() {
     };
 
     const scrollToggle = document.getElementById("kk-scroll-toggle");
-    scrollToggle.onclick = () => {
+    const scrollToggleMini = document.getElementById("kk-scroll-toggle-mini");
+
+    const toggleAutoScrollState = () => {
         isAutoScrollEnabled = !isAutoScrollEnabled;
-        scrollToggle.classList.toggle("active", isAutoScrollEnabled);
-        scrollToggle.innerText = `📜 Scroll: ${isAutoScrollEnabled ? "ON" : "OFF"}`;
+        if (scrollToggle) {
+            scrollToggle.classList.toggle("active", isAutoScrollEnabled);
+            scrollToggle.innerText = `📜 Scroll: ${isAutoScrollEnabled ? "ON" : "OFF"}`;
+        }
+        if (scrollToggleMini) {
+            scrollToggleMini.classList.toggle("active", isAutoScrollEnabled);
+        }
         savePreference("autoScroll", isAutoScrollEnabled);
     };
+
+    if (scrollToggle) scrollToggle.onclick = toggleAutoScrollState;
+    if (scrollToggleMini) scrollToggleMini.onclick = toggleAutoScrollState;
 
     document.getElementById("kk-seekbar").oninput = handleSeekBarInput;
 
