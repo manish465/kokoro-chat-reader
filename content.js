@@ -351,6 +351,7 @@ function cleanTextForSpeech(text) {
         text
             // Map all arrow variations (Unicode & ASCII) to " to "
             .replace(/(?:→|➔|➜|►|─>|-->|->|=>|⇒|↦)/g, " to ")
+            .replace(/(?:↓)/g, " then ")
             .replace(/["'“”‘’`]/g, "") // Remove quotes/backticks
             .replace(/[*_~#]/g, "") // Strip markdown formatting
             .replace(/\s+/g, " ") // Normalize whitespace
