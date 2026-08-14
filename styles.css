@@ -78,29 +78,22 @@
 }
 
 /* ==========================================================================
-   3. Now Playing Header & Response Selection Dropdown
+   3. Single Now Playing Header Display (Dropdown Completely Removed)
    ========================================================================== */
 
 .kokoro-now-playing {
-    position: relative;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 8px 12px;
-    cursor: pointer;
-    transition: background 0.2s ease;
-}
-
-.kokoro-now-playing:hover {
-    background: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
 }
 
 .kokoro-np-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    font-size: 11px;
+    width: 100%;
 }
 
 .kokoro-now-playing-text {
@@ -108,66 +101,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     color: #c084fc;
-    font-weight: 600;
-    flex: 1;
-}
-
-.kokoro-dropdown-arrow {
-    font-size: 9px;
-    color: #9ca3af;
-}
-
-/* Scrollable Response Dropdown */
-.kokoro-response-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    margin-top: 6px;
-    background: #181825;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    max-height: 240px;
-    overflow-y: auto !important;
-    display: none;
-    flex-direction: column;
-    z-index: 99999 !important;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
-}
-
-.kokoro-response-dropdown.show {
-    display: flex !important;
-}
-
-.kokoro-dropdown-item {
-    padding: 8px 12px;
     font-size: 11px;
-    color: #d1d5db;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: background-color 0.15s ease;
-}
-
-.kokoro-dropdown-item:last-child {
-    border-bottom: none;
-}
-
-.kokoro-dropdown-item:hover {
-    background: rgba(168, 85, 247, 0.2);
-    color: #ffffff;
-}
-
-.kokoro-dropdown-item.active {
-    color: #a78bfa;
-    font-weight: 700;
-    background: rgba(168, 85, 247, 0.1);
+    font-weight: 600;
+    width: 100%;
 }
 
 /* ==========================================================================
-   4. Control Buttons & Rows
+   4. Control Buttons & Top Layout
    ========================================================================== */
 
 .kokoro-top-row {
@@ -235,7 +175,7 @@
 }
 
 .kokoro-speed-select {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(18, 18, 26, 0.9);
     color: #a7f3d0;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
@@ -322,7 +262,6 @@
     border-radius: 30px !important;
 }
 
-/* Hide detailed controls in mini mode */
 #kokoro-control-bar.mini .kokoro-now-playing,
 #kokoro-control-bar.mini .kokoro-settings-row,
 #kokoro-control-bar.mini .kokoro-progress-container,
@@ -333,7 +272,6 @@
     display: none !important;
 }
 
-/* Keep Drag Handle, Play/Pause, Locate 🎯, and Mini Toggle visible */
 #kokoro-control-bar.mini #kk-drag,
 #kokoro-control-bar.mini #kk-play,
 #kokoro-control-bar.mini #kk-locate,
@@ -342,28 +280,51 @@
 }
 
 /* ==========================================================================
-   7. Hover Line Start Jump Button & Glow Highlights
+   7. Smooth Reading, Auto-Scroll, & Sentence Highlights
    ========================================================================== */
+
+/* Enable page-level smooth scrolling across chat containers */
+html,
+body,
+.chat-container,
+[class*="conversation"],
+[class*="markdown"] {
+    scroll-behavior: smooth;
+}
+
+/* Sentence span element keeps standard text flow without changing line height */
+.kokoro-sentence-span {
+    display: inline;
+    transition:
+        background-color 0.2s ease,
+        outline 0.2s ease;
+    scroll-margin-top: 180px;
+    scroll-margin-bottom: 180px;
+}
 
 .kokoro-line-target {
     position: relative !important;
+    transition:
+        background-color 0.25s ease,
+        outline 0.25s ease,
+        box-shadow 0.25s ease;
 }
 
 .kokoro-line-jump-btn {
     position: absolute !important;
-    right: 8px;
-    top: -8px;
+    right: 4px;
+    top: -10px;
     z-index: 100;
-    padding: 1px 5px !important;
+    padding: 2px 6px !important;
     font-size: 9px !important;
     line-height: 1.2 !important;
     font-weight: 600;
-    color: #2563eb;
-    background-color: #eff6ff;
-    border: 1px solid #bfdbfe;
+    color: #c084fc;
+    background-color: #1e1b2e;
+    border: 1px solid rgba(168, 85, 247, 0.4);
     border-radius: 6px;
     cursor: pointer;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     opacity: 0;
     pointer-events: none;
     transition:
@@ -377,17 +338,16 @@
 }
 
 .kokoro-line-jump-btn:hover {
-    background-color: #2563eb;
+    background-color: #a855f7;
     color: #ffffff;
-    transform: scale(1.03);
+    transform: scale(1.05);
 }
 
-/* Glow highlight effect when active or clicking Target button */
+/* Sentence-level active reading glow */
 .kokoro-active-reading-glow {
     outline: 2px solid #a855f7 !important;
-    border-radius: 6px;
-    background-color: rgba(168, 85, 247, 0.15) !important;
-    transition:
-        background-color 0.3s ease,
-        outline 0.3s ease;
+    outline-offset: 1px;
+    background-color: rgba(168, 85, 247, 0.2) !important;
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+    border-radius: 3px;
 }

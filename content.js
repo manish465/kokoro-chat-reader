@@ -1,12 +1,17 @@
 // --- State & Settings ---
 let currentChatElement = null;
 let textChunks = [];
+let chunkSpanGroups = []; // Stores arrays of <span> elements grouped per chunk
 let currentChunkIndex = 0;
+
+// Configuration: Set how many sentences to combine per playback chunk
+const SENTENCES_PER_CHUNK = 3;
 
 let playerState = "IDLE"; // 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED'
 let controlBar = null;
 
 let isSkipCodeEnabled = true;
+let isAutoScrollEnabled = true;
 
 // Progress & Timer Tracking
 let timerInterval = null;
@@ -140,9 +145,7 @@ function injectControlBar() {
     <div class="kokoro-now-playing" id="kk-np-box">
       <div class="kokoro-np-header">
         <div class="kokoro-now-playing-text" id="kk-np-text">Select response...</div>
-        <span class="kokoro-dropdown-arrow">▼</span>
       </div>
-      <div class="kokoro-response-dropdown" id="kk-dropdown"></div>
     </div>
     
     <div class="kokoro-top-row">
@@ -158,7 +161,7 @@ function injectControlBar() {
       <button class="kokoro-btn kokoro-btn-primary" id="kk-play" title="Play/Pause">▶</button>
       <button class="kokoro-btn" id="kk-ff" title="+10s Forward">⏩</button>
       <button class="kokoro-btn" id="kk-next" title="Next Response">⏭</button>
-      <button class="kokoro-btn" id="kk-locate" title="Jump to current reading line in chat">🎯</button>
+      <button class="kokoro-btn" id="kk-locate" title="Jump to active reading sentence">🎯</button>
       <button class="kokoro-btn" id="kk-mini-toggle" title="Minimize/Expand">_</button>
     </div>
 
@@ -169,7 +172,8 @@ function injectControlBar() {
         <option value="1.25">1.25x</option>
         <option value="1.5">1.5x</option>
       </select>
-      <button class="kokoro-btn kokoro-btn-toggle ${isSkipCodeEnabled ? "active" : ""}" id="kk-code-toggle" title="Skip Code Blocks">&lt;/&gt; Skip Code</button>
+      <button class="kokoro-btn kokoro-btn-toggle ${isSkipCodeEnabled ? "active" : ""}" id="kk-code-toggle" title="Skip Code Blocks">&lt;/&gt; Code</button>
+      <button class="kokoro-btn kokoro-btn-toggle ${isAutoScrollEnabled ? "active" : ""}" id="kk-scroll-toggle" title="Toggle Auto Scroll">📜 Scroll: ${isAutoScrollEnabled ? "ON" : "OFF"}</button>
     </div>
 
     <div class="kokoro-progress-container">
@@ -196,7 +200,8 @@ function injectControlBar() {
     document.getElementById("kk-ff").onclick = () => seekRelative(10);
     document.getElementById("kk-next").onclick = readNextChat;
     document.getElementById("kk-prev").onclick = readPreviousChat;
-    document.getElementById("kk-locate").onclick = scrollToActiveLine;
+    document.getElementById("kk-locate").onclick = () =>
+        highlightAndScrollSentence(currentChunkIndex, true);
     document.getElementById("kk-mini-toggle").onclick = toggleMiniMode;
 
     const speedSelect = document.getElementById("kk-speed");
@@ -215,48 +220,17 @@ function injectControlBar() {
         savePreference("skipCode", isSkipCodeEnabled);
     };
 
-    document.getElementById("kk-np-box").onclick = toggleDropdown;
+    const scrollToggle = document.getElementById("kk-scroll-toggle");
+    scrollToggle.onclick = () => {
+        isAutoScrollEnabled = !isAutoScrollEnabled;
+        scrollToggle.classList.toggle("active", isAutoScrollEnabled);
+        scrollToggle.innerText = `📜 Scroll: ${isAutoScrollEnabled ? "ON" : "OFF"}`;
+        savePreference("autoScroll", isAutoScrollEnabled);
+    };
+
     document.getElementById("kk-seekbar").oninput = handleSeekBarInput;
 
     makeDraggable(controlBar, document.getElementById("kk-drag"));
-}
-
-// Scroll chat directly to active spoken sentence
-function scrollToActiveLine() {
-    if (!currentChatElement) return;
-
-    const currentChunk = textChunks[currentChunkIndex];
-    if (!currentChunk) {
-        currentChatElement.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
-        });
-        return;
-    }
-
-    const blocks = currentChatElement.querySelectorAll(
-        "p, li, h1, h2, h3, h4, blockquote",
-    );
-    let targetBlock = null;
-
-    for (const block of blocks) {
-        const text = getCleanTextFromLine(block).toLowerCase();
-        const chunkSnippet = currentChunk.trim().toLowerCase().slice(0, 20);
-        if (text.includes(chunkSnippet)) {
-            targetBlock = block;
-            break;
-        }
-    }
-
-    const elemToScroll = targetBlock || currentChatElement;
-    elemToScroll.scrollIntoView({ behavior: "smooth", block: "center" });
-
-    // Highlight active block briefly
-    elemToScroll.classList.add("kokoro-active-reading-glow");
-    setTimeout(
-        () => elemToScroll.classList.remove("kokoro-active-reading-glow"),
-        2000,
-    );
 }
 
 // Mini Mode Toggle
@@ -276,43 +250,10 @@ function savePreference(key, val) {
 function loadUserPreferences() {
     if (!chrome.storage || !chrome.storage.local) return;
 
-    chrome.storage.local.get(["skipCode"], (res) => {
+    chrome.storage.local.get(["skipCode", "autoScroll"], (res) => {
         if (res.skipCode !== undefined) isSkipCodeEnabled = res.skipCode;
+        if (res.autoScroll !== undefined) isAutoScrollEnabled = res.autoScroll;
     });
-}
-
-// Toggle & Populate Dropdown Menu
-function toggleDropdown(e) {
-    e.stopPropagation();
-    const dropdown = document.getElementById("kk-dropdown");
-    const isVisible = dropdown.classList.contains("show");
-
-    if (isVisible) {
-        dropdown.classList.remove("show");
-        return;
-    }
-
-    const chats = getAllChatBubbles();
-    dropdown.innerHTML = "";
-
-    chats.forEach((chat, index) => {
-        const snippet = getCleanTextFromChat(chat).slice(0, 45) + "...";
-        const item = document.createElement("div");
-        item.className =
-            "kokoro-dropdown-item" +
-            (chat === currentChatElement ? " active" : "");
-        item.innerText = `${index + 1}. ${snippet}`;
-
-        item.onclick = (e) => {
-            e.stopPropagation();
-            dropdown.classList.remove("show");
-            speakFullResponse(chat, 0);
-        };
-
-        dropdown.appendChild(item);
-    });
-
-    dropdown.classList.add("show");
 }
 
 // Draggable Engine
@@ -372,9 +313,94 @@ function getCleanTextFromLine(element) {
     return clone.innerText.trim();
 }
 
-// Text Preparation
+// Clean text specifically for spoken output (stripping quote marks & markdown noise)
+function cleanTextForSpeech(text) {
+    if (!text) return "";
+    return text
+        .replace(/["'“”‘’`]/g, "") // Remove quotes/backticks so TTS doesn't speak them
+        .replace(/[*_~#]/g, "") // Strip markdown formatting symbols
+        .replace(/\s+/g, " ") // Normalize whitespace
+        .trim();
+}
+
+// Wrap ALL text nodes into sentence spans without skipping single-sentence elements
+function wrapSentencesInChat(element) {
+    // Clear previous wrappers if re-reading
+    element.querySelectorAll(".kokoro-sentence-span").forEach((span) => {
+        const parent = span.parentNode;
+        while (span.firstChild) parent.insertBefore(span.firstChild, span);
+        parent.removeChild(span);
+    });
+
+    // Expand selectors to catch headers, table cells, definition items, etc.
+    const textBlocks = element.querySelectorAll(
+        "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, dt, dd, div",
+    );
+
+    textBlocks.forEach((block) => {
+        // Skip code blocks if option enabled
+        if (isSkipCodeEnabled && block.closest("pre, code")) return;
+
+        // Traverse DOM node tree cleanly
+        const walk = document.createTreeWalker(
+            block,
+            NodeFilter.SHOW_TEXT,
+            {
+                acceptNode: function (node) {
+                    const parent = node.parentNode;
+                    if (
+                        parent &&
+                        parent.classList &&
+                        (parent.classList.contains("kokoro-line-jump-btn") ||
+                            parent.classList.contains("kokoro-inline-play-btn"))
+                    ) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    return node.textContent.trim().length > 0
+                        ? NodeFilter.FILTER_ACCEPT
+                        : NodeFilter.FILTER_REJECT;
+                },
+            },
+            false,
+        );
+
+        const textNodes = [];
+        let node;
+        while ((node = walk.nextNode())) {
+            // Avoid double-processing if already inside a sentence span
+            if (!node.parentNode.classList.contains("kokoro-sentence-span")) {
+                textNodes.push(node);
+            }
+        }
+
+        textNodes.forEach((tNode) => {
+            const rawText = tNode.textContent;
+            // Split by sentence-ending punctuation while preserving spaces
+            const sentences = rawText.split(/(?<=[.!?])\s+/);
+
+            const fragment = document.createDocumentFragment();
+
+            sentences.forEach((sent, idx) => {
+                if (!sent) return;
+                const span = document.createElement("span");
+                span.className = "kokoro-sentence-span";
+                // Preserve trailing whitespace for seamless inline rendering
+                span.textContent =
+                    sent + (idx < sentences.length - 1 ? " " : "");
+                fragment.appendChild(span);
+            });
+
+            if (tNode.parentNode && fragment.childNodes.length > 0) {
+                tNode.parentNode.replaceChild(fragment, tNode);
+            }
+        });
+    });
+}
+
+// Prepare Text Chunks grouped 3-4 sentences at a time
 function prepareTextChunks(element) {
     currentChatElement = element;
+    wrapSentencesInChat(element);
 
     const cleanText = getCleanTextFromChat(element);
     const fullTextWords = cleanText.split(/\s+/);
@@ -401,8 +427,102 @@ function prepareTextChunks(element) {
     const timeTot = document.getElementById("kk-time-tot");
     if (timeTot) timeTot.innerText = formatTime(estimatedTotalSecs);
 
-    // Sentence Chunking
-    textChunks = cleanText.match(/[^.!?]+[.!?]+|\S+/g) || [cleanText];
+    // Gather all sentence spans
+    const sentenceSpans = Array.from(
+        element.querySelectorAll(".kokoro-sentence-span"),
+    );
+
+    textChunks = [];
+    chunkSpanGroups = [];
+
+    if (sentenceSpans.length > 0) {
+        // Group spans into batches of 3-4 sentences
+        for (let i = 0; i < sentenceSpans.length; i += SENTENCES_PER_CHUNK) {
+            const group = sentenceSpans.slice(i, i + SENTENCES_PER_CHUNK);
+            const combinedText = group
+                .map((span) => span.textContent)
+                .join(" ");
+
+            textChunks.push(combinedText);
+            chunkSpanGroups.push(group);
+        }
+    } else {
+        textChunks = [cleanText];
+        chunkSpanGroups = [];
+    }
+}
+
+// Highlight & Auto-Scroll for multi-sentence chunk groups
+function highlightAndScrollSentence(chunkIndex, forceScroll = false) {
+    if (!currentChatElement) return;
+
+    // Clear previous active reading highlights
+    document.querySelectorAll(".kokoro-active-reading-glow").forEach((el) => {
+        el.classList.remove("kokoro-active-reading-glow");
+    });
+
+    const activeSpans = chunkSpanGroups[chunkIndex];
+
+    if (activeSpans && activeSpans.length > 0) {
+        // Highlight all spans in the active chunk group together
+        activeSpans.forEach((span) =>
+            span.classList.add("kokoro-active-reading-glow"),
+        );
+
+        // Auto-scroll to the first sentence span of the active group
+        if (isAutoScrollEnabled || forceScroll) {
+            activeSpans[0].scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+            });
+        }
+    }
+}
+
+// Play multi-sentence chunk
+function playChunk(index) {
+    if (index >= textChunks.length) {
+        stopTimer();
+        setPlayerState("IDLE");
+        currentElapsedSecs = estimatedTotalSecs;
+        updateProgressUI();
+        return;
+    }
+
+    currentChunkIndex = index;
+    const rawChunkText = textChunks[index];
+    const rate = parseFloat(document.getElementById("kk-speed")?.value || 1.0);
+
+    // Highlight and scroll to the active 3-4 sentence group
+    highlightAndScrollSentence(index);
+
+    // Clean quotes and markdown artifacts BEFORE sending to speech engine
+    const spokenText = cleanTextForSpeech(rawChunkText);
+
+    // If chunk contained only stripped symbols, advance smoothly to the next chunk
+    if (!spokenText) {
+        playChunk(index + 1);
+        return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(spokenText);
+    utterance.rate = rate;
+
+    utterance.onstart = () => {
+        setLoadingState(false);
+        setPlayerState("PLAYING");
+        startTimer();
+    };
+
+    utterance.onend = () => {
+        if (playerState === "PLAYING") playChunk(index + 1);
+    };
+
+    utterance.onerror = () => {
+        if (playerState === "PLAYING") playChunk(index + 1);
+    };
+
+    window.speechSynthesis.speak(utterance);
 }
 
 function speakFullResponse(chatElement, startChunkIndex = 0) {
@@ -418,7 +538,7 @@ function speakFullResponse(chatElement, startChunkIndex = 0) {
         );
         currentChunkIndex = startIdx;
 
-        const ratio = startIdx / textChunks.length;
+        const ratio = textChunks.length > 0 ? startIdx / textChunks.length : 0;
         currentElapsedSecs = ratio * estimatedTotalSecs;
 
         playChunk(startIdx);
@@ -443,39 +563,6 @@ function speakFromLine(chatElement, lineElement) {
     if (matchedIndex === -1) matchedIndex = 0;
 
     speakFullResponse(chatElement, matchedIndex);
-}
-
-function playChunk(index) {
-    if (index >= textChunks.length) {
-        stopTimer();
-        setPlayerState("IDLE");
-        currentElapsedSecs = estimatedTotalSecs;
-        updateProgressUI();
-        return;
-    }
-
-    currentChunkIndex = index;
-    const chunkText = textChunks[index];
-    const rate = parseFloat(document.getElementById("kk-speed")?.value || 1.0);
-
-    const utterance = new SpeechSynthesisUtterance(chunkText);
-    utterance.rate = rate;
-
-    utterance.onstart = () => {
-        setLoadingState(false);
-        setPlayerState("PLAYING");
-        startTimer();
-    };
-
-    utterance.onend = () => {
-        if (playerState === "PLAYING") playChunk(index + 1);
-    };
-
-    utterance.onerror = () => {
-        if (playerState === "PLAYING") playChunk(index + 1);
-    };
-
-    window.speechSynthesis.speak(utterance);
 }
 
 // Timer Engine
@@ -504,7 +591,9 @@ function updateProgressUI() {
     const seekBar = document.getElementById("kk-seekbar");
     const timeCur = document.getElementById("kk-time-cur");
 
-    const pct = (currentElapsedSecs / estimatedTotalSecs) * 100;
+    const pct = estimatedTotalSecs
+        ? (currentElapsedSecs / estimatedTotalSecs) * 100
+        : 0;
 
     if (seekBar) seekBar.value = Math.min(100, pct);
     if (timeCur) timeCur.innerText = formatTime(Math.floor(currentElapsedSecs));
