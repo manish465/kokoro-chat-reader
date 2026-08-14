@@ -4,9 +4,6 @@ let textChunks = [];
 let chunkSpanGroups = []; // Stores arrays of <span> elements grouped per chunk
 let currentChunkIndex = 0;
 
-// Configuration: Set how many sentences to combine per playback chunk
-const SENTENCES_PER_CHUNK = 7;
-
 let playerState = "IDLE"; // 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED'
 let controlBar = null;
 
@@ -17,6 +14,7 @@ let isAutoScrollEnabled = true;
 let timerInterval = null;
 let currentElapsedSecs = 0;
 let estimatedTotalSecs = 0;
+let observerTimeout = null;
 
 // Load Saved Preferences on startup
 loadUserPreferences();
@@ -125,10 +123,21 @@ function setupLineSelectionListeners() {
     });
 }
 
-// MutationObserver for live response streaming
+// Debounced MutationObserver to avoid UI lag on continuous DOM streams
 function setupMutationObserver() {
-    const observer = new MutationObserver(() => {
-        injectInlinePlayButtons();
+    const observer = new MutationObserver((mutations) => {
+        const shouldUpdate = mutations.some((m) => {
+            return (
+                !m.target.closest || !m.target.closest("#kokoro-control-bar")
+            );
+        });
+
+        if (shouldUpdate) {
+            clearTimeout(observerTimeout);
+            observerTimeout = setTimeout(() => {
+                injectInlinePlayButtons();
+            }, 300);
+        }
     });
 
     observer.observe(document.body, {
@@ -158,13 +167,12 @@ function injectControlBar() {
           <circle cx="4" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/>
         </svg>
       </div>
-      <button class="kokoro-btn kokoro-btn-toggle ${isAutoScrollEnabled ? "active" : ""}" id="kk-scroll-toggle-mini" title="Toggle Auto Scroll">📜</button>
       <button class="kokoro-btn" id="kk-prev" title="Previous Response">⏮</button>
       <button class="kokoro-btn" id="kk-rw" title="-10s Rewind">⏪</button>
       <button class="kokoro-btn kokoro-btn-primary" id="kk-play" title="Play/Pause">▶</button>
+      <button class="kokoro-btn kokoro-btn-toggle ${isAutoScrollEnabled ? "active" : ""}" id="kk-scroll-toggle-mini" title="Toggle Auto Scroll">📜</button>
       <button class="kokoro-btn" id="kk-ff" title="+10s Forward">⏩</button>
       <button class="kokoro-btn" id="kk-next" title="Next Response">⏭</button>
-      <button class="kokoro-btn" id="kk-locate" title="Jump to active reading sentence">🎯</button>
       <button class="kokoro-btn" id="kk-mini-toggle" title="Minimize/Expand">_</button>
     </div>
 
@@ -203,8 +211,6 @@ function injectControlBar() {
     document.getElementById("kk-ff").onclick = () => seekRelative(10);
     document.getElementById("kk-next").onclick = readNextChat;
     document.getElementById("kk-prev").onclick = readPreviousChat;
-    document.getElementById("kk-locate").onclick = () =>
-        highlightAndScrollSentence(currentChunkIndex, true);
     document.getElementById("kk-mini-toggle").onclick = toggleMiniMode;
 
     const speedSelect = document.getElementById("kk-speed");
@@ -255,13 +261,22 @@ function toggleMiniMode() {
 
 // Preferences Storage Helpers
 function savePreference(key, val) {
-    if (chrome.storage && chrome.storage.local) {
+    if (
+        typeof chrome !== "undefined" &&
+        chrome.storage &&
+        chrome.storage.local
+    ) {
         chrome.storage.local.set({ [key]: val });
     }
 }
 
 function loadUserPreferences() {
-    if (!chrome.storage || !chrome.storage.local) return;
+    if (
+        typeof chrome === "undefined" ||
+        !chrome.storage ||
+        !chrome.storage.local
+    )
+        return;
 
     chrome.storage.local.get(["skipCode", "autoScroll"], (res) => {
         if (res.skipCode !== undefined) isSkipCodeEnabled = res.skipCode;
@@ -269,10 +284,23 @@ function loadUserPreferences() {
     });
 }
 
-// Draggable Engine
+// Clean & Leak-free Draggable Engine
 function makeDraggable(element, handle) {
     let offsetX = 0,
         offsetY = 0;
+
+    const onMouseMove = (e) => {
+        e.preventDefault();
+        element.style.left = e.clientX - offsetX + "px";
+        element.style.top = e.clientY - offsetY + "px";
+    };
+
+    const onMouseUp = () => {
+        savePreference("playerPosLeft", element.style.left);
+        savePreference("playerPosTop", element.style.top);
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+    };
 
     handle.onmousedown = (e) => {
         e.preventDefault();
@@ -286,18 +314,8 @@ function makeDraggable(element, handle) {
         offsetX = e.clientX - rect.left;
         offsetY = e.clientY - rect.top;
 
-        document.onmousemove = (e) => {
-            e.preventDefault();
-            element.style.left = e.clientX - offsetX + "px";
-            element.style.top = e.clientY - offsetY + "px";
-        };
-
-        document.onmouseup = () => {
-            savePreference("playerPosLeft", element.style.left);
-            savePreference("playerPosTop", element.style.top);
-            document.onmousemove = null;
-            document.onmouseup = null;
-        };
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
     };
 }
 
@@ -326,35 +344,38 @@ function getCleanTextFromLine(element) {
     return clone.innerText.trim();
 }
 
-// Clean text specifically for spoken output (stripping quote marks & markdown noise)
+// Clean text specifically for spoken output
 function cleanTextForSpeech(text) {
     if (!text) return "";
     return text
-        .replace(/["'“”‘’`]/g, "") // Remove quotes/backticks so TTS doesn't speak them
-        .replace(/[*_~#]/g, "") // Strip markdown formatting symbols
+        .replace(/["'“”‘’`]/g, "") // Remove quotes/backticks
+        .replace(/[*_~#]/g, "") // Strip markdown
         .replace(/\s+/g, " ") // Normalize whitespace
         .trim();
 }
 
-// Wrap ALL text nodes into sentence spans without skipping single-sentence elements
+// Wrap ALL text nodes into sentence spans
 function wrapSentencesInChat(element) {
-    // Clear previous wrappers if re-reading
+    // 1. Clean existing sentence spans
     element.querySelectorAll(".kokoro-sentence-span").forEach((span) => {
         const parent = span.parentNode;
         while (span.firstChild) parent.insertBefore(span.firstChild, span);
         parent.removeChild(span);
     });
 
-    // Expand selectors to catch headers, table cells, definition items, etc.
-    const textBlocks = element.querySelectorAll(
-        "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, dt, dd, div",
-    );
+    // 2. Select block selectors
+    const selectors =
+        "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, dt, dd";
+    const rawBlocks = Array.from(element.querySelectorAll(selectors));
 
-    textBlocks.forEach((block) => {
-        // Skip code blocks if option enabled
+    // 3. Filter out parent containers that contain nested block children (e.g., blockquote containing <p>)
+    const leafBlocks = rawBlocks.filter((block) => {
+        return !block.querySelector(selectors);
+    });
+
+    leafBlocks.forEach((block) => {
         if (isSkipCodeEnabled && block.closest("pre, code")) return;
 
-        // Traverse DOM node tree cleanly
         const walk = document.createTreeWalker(
             block,
             NodeFilter.SHOW_TEXT,
@@ -365,7 +386,10 @@ function wrapSentencesInChat(element) {
                         parent &&
                         parent.classList &&
                         (parent.classList.contains("kokoro-line-jump-btn") ||
-                            parent.classList.contains("kokoro-inline-play-btn"))
+                            parent.classList.contains(
+                                "kokoro-inline-play-btn",
+                            ) ||
+                            parent.classList.contains("kokoro-sentence-span"))
                     ) {
                         return NodeFilter.FILTER_REJECT;
                     }
@@ -380,24 +404,18 @@ function wrapSentencesInChat(element) {
         const textNodes = [];
         let node;
         while ((node = walk.nextNode())) {
-            // Avoid double-processing if already inside a sentence span
-            if (!node.parentNode.classList.contains("kokoro-sentence-span")) {
-                textNodes.push(node);
-            }
+            textNodes.push(node);
         }
 
         textNodes.forEach((tNode) => {
             const rawText = tNode.textContent;
-            // Split by sentence-ending punctuation while preserving spaces
             const sentences = rawText.split(/(?<=[.!?])\s+/);
-
             const fragment = document.createDocumentFragment();
 
             sentences.forEach((sent, idx) => {
                 if (!sent) return;
                 const span = document.createElement("span");
                 span.className = "kokoro-sentence-span";
-                // Preserve trailing whitespace for seamless inline rendering
                 span.textContent =
                     sent + (idx < sentences.length - 1 ? " " : "");
                 fragment.appendChild(span);
@@ -410,7 +428,7 @@ function wrapSentencesInChat(element) {
     });
 }
 
-// Prepare Text Chunks grouped 3-4 sentences at a time
+// Prepare Text Chunks grouped logically by paragraphs & major structural blocks
 function prepareTextChunks(element) {
     currentChatElement = element;
     wrapSentencesInChat(element);
@@ -418,19 +436,16 @@ function prepareTextChunks(element) {
     const cleanText = getCleanTextFromChat(element);
     const fullTextWords = cleanText.split(/\s+/);
 
-    // Set Now Playing Title
     const snippet = cleanText.slice(0, 35) + "...";
     const npText = document.getElementById("kk-np-text");
     if (npText) npText.innerText = snippet;
 
-    // Active Button State
     document
         .querySelectorAll(".kokoro-inline-play-btn")
         .forEach((btn) => btn.classList.remove("active"));
     const activeBtn = element.querySelector(".kokoro-inline-play-btn");
     if (activeBtn) activeBtn.classList.add("active");
 
-    // Estimate total time
     const speed = parseFloat(document.getElementById("kk-speed")?.value || 1.0);
     estimatedTotalSecs = Math.max(
         1,
@@ -440,36 +455,74 @@ function prepareTextChunks(element) {
     const timeTot = document.getElementById("kk-time-tot");
     if (timeTot) timeTot.innerText = formatTime(estimatedTotalSecs);
 
-    // Gather all sentence spans
-    const sentenceSpans = Array.from(
-        element.querySelectorAll(".kokoro-sentence-span"),
-    );
-
     textChunks = [];
     chunkSpanGroups = [];
 
-    if (sentenceSpans.length > 0) {
-        // Group spans into batches of 3-4 sentences
-        for (let i = 0; i < sentenceSpans.length; i += SENTENCES_PER_CHUNK) {
-            const group = sentenceSpans.slice(i, i + SENTENCES_PER_CHUNK);
-            const combinedText = group
-                .map((span) => span.textContent)
-                .join(" ");
+    // Filter out parent containers so blockquotes with nested <p> aren't queried twice
+    const selectors = "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th";
+    const rawBlocks = Array.from(element.querySelectorAll(selectors));
+    const leafBlocks = rawBlocks.filter(
+        (block) => !block.querySelector(selectors),
+    );
 
-            textChunks.push(combinedText);
-            chunkSpanGroups.push(group);
+    leafBlocks.forEach((block) => {
+        if (isSkipCodeEnabled && block.closest("pre, code")) return;
+
+        const spans = Array.from(
+            block.querySelectorAll(".kokoro-sentence-span"),
+        );
+        if (spans.length === 0) return;
+
+        let currentGroup = [];
+        let currentLength = 0;
+
+        spans.forEach((span) => {
+            const spanText = span.textContent.trim();
+            if (!spanText) return;
+
+            if (
+                currentGroup.length > 0 &&
+                (currentLength + spanText.length > 220 ||
+                    currentGroup.length >= 3)
+            ) {
+                const combinedText = currentGroup
+                    .map((s) => s.textContent)
+                    .join(" ")
+                    .trim();
+                if (combinedText) {
+                    textChunks.push(combinedText);
+                    chunkSpanGroups.push([...currentGroup]);
+                }
+                currentGroup = [];
+                currentLength = 0;
+            }
+
+            currentGroup.push(span);
+            currentLength += spanText.length;
+        });
+
+        if (currentGroup.length > 0) {
+            const combinedText = currentGroup
+                .map((s) => s.textContent)
+                .join(" ")
+                .trim();
+            if (combinedText) {
+                textChunks.push(combinedText);
+                chunkSpanGroups.push([...currentGroup]);
+            }
         }
-    } else {
+    });
+
+    if (textChunks.length === 0) {
         textChunks = [cleanText];
         chunkSpanGroups = [];
     }
 }
 
-// Highlight & Auto-Scroll for multi-sentence chunk groups
+// Highlight & Smooth Auto-Scroll with dynamic bottom-padding offset
 function highlightAndScrollSentence(chunkIndex, forceScroll = false) {
     if (!currentChatElement) return;
 
-    // Clear previous active reading highlights
     document.querySelectorAll(".kokoro-active-reading-glow").forEach((el) => {
         el.classList.remove("kokoro-active-reading-glow");
     });
@@ -477,22 +530,31 @@ function highlightAndScrollSentence(chunkIndex, forceScroll = false) {
     const activeSpans = chunkSpanGroups[chunkIndex];
 
     if (activeSpans && activeSpans.length > 0) {
-        // Highlight all spans in the active chunk group together
         activeSpans.forEach((span) =>
             span.classList.add("kokoro-active-reading-glow"),
         );
 
-        // Auto-scroll to the first sentence span of the active group
         if (isAutoScrollEnabled || forceScroll) {
-            activeSpans[0].scrollIntoView({
-                behavior: "smooth",
-                block: "center",
-            });
+            const firstSpan = activeSpans[0];
+            const lastSpan = activeSpans[activeSpans.length - 1];
+
+            const rect = lastSpan.getBoundingClientRect();
+            const viewportHeight =
+                window.innerHeight || document.documentElement.clientHeight;
+
+            // Keep chunk fully visible above footers/input boxes
+            if (rect.bottom > viewportHeight - 120 || rect.top < 100) {
+                firstSpan.scrollIntoView({
+                    behavior: "smooth",
+                    block: "nearest",
+                    inline: "nearest",
+                });
+            }
         }
     }
 }
 
-// Play multi-sentence chunk
+// Play multi-sentence chunk with Keep-Alive
 function playChunk(index) {
     if (index >= textChunks.length) {
         stopTimer();
@@ -506,17 +568,16 @@ function playChunk(index) {
     const rawChunkText = textChunks[index];
     const rate = parseFloat(document.getElementById("kk-speed")?.value || 1.0);
 
-    // Highlight and scroll to the active 3-4 sentence group
     highlightAndScrollSentence(index);
 
-    // Clean quotes and markdown artifacts BEFORE sending to speech engine
     const spokenText = cleanTextForSpeech(rawChunkText);
 
-    // If chunk contained only stripped symbols, advance smoothly to the next chunk
     if (!spokenText) {
         playChunk(index + 1);
         return;
     }
+
+    window.speechSynthesis.cancel(); // Prevent queuing deadlocks
 
     const utterance = new SpeechSynthesisUtterance(spokenText);
     utterance.rate = rate;
@@ -563,7 +624,6 @@ function speakFromLine(chatElement, lineElement) {
 
     let matchedIndex = -1;
 
-    // 1. Direct DOM Node Matching: Find the sentence span inside the clicked line
     const targetSpan = lineElement.classList.contains("kokoro-sentence-span")
         ? lineElement
         : lineElement.querySelector(".kokoro-sentence-span");
@@ -574,7 +634,6 @@ function speakFromLine(chatElement, lineElement) {
         );
     }
 
-    // 2. Fallback Normalized Text Search: If direct DOM match wasn't found
     if (matchedIndex === -1) {
         const cleanLineText = getCleanTextFromLine(lineElement)
             .replace(/[^a-zA-Z0-9\s]/g, "")
@@ -721,10 +780,16 @@ function readPreviousChat() {
     if (idx > 0) speakFullResponse(chats[idx - 1], 0);
 }
 
-chrome.runtime.onMessage.addListener((request) => {
-    if (request.action === "READ_CURRENT_CHAT") {
-        injectControlBar();
-        const chats = getAllChatBubbles();
-        if (chats.length) speakFullResponse(chats[chats.length - 1], 0);
-    }
-});
+if (
+    typeof chrome !== "undefined" &&
+    chrome.runtime &&
+    chrome.runtime.onMessage
+) {
+    chrome.runtime.onMessage.addListener((request) => {
+        if (request.action === "READ_CURRENT_CHAT") {
+            injectControlBar();
+            const chats = getAllChatBubbles();
+            if (chats.length) speakFullResponse(chats[chats.length - 1], 0);
+        }
+    });
+}

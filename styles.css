@@ -78,7 +78,7 @@
 }
 
 /* ==========================================================================
-   3. Single Now Playing Header Display (Dropdown Completely Removed)
+   3. Single Now Playing Header Display
    ========================================================================== */
 
 .kokoro-now-playing {
@@ -274,7 +274,7 @@
 
 #kokoro-control-bar.mini #kk-drag,
 #kokoro-control-bar.mini #kk-play,
-#kokoro-control-bar.mini #kk-locate,
+#kokoro-control-bar.mini #kk-scroll-toggle-mini,
 #kokoro-control-bar.mini #kk-mini-toggle {
     display: inline-flex !important;
 }
@@ -283,7 +283,6 @@
    7. Smooth Reading, Auto-Scroll, & Sentence Highlights
    ========================================================================== */
 
-/* Enable page-level smooth scrolling across chat containers */
 html,
 body,
 .chat-container,
@@ -292,14 +291,13 @@ body,
     scroll-behavior: smooth;
 }
 
-/* Sentence span element keeps standard text flow without changing line height */
 .kokoro-sentence-span {
     display: inline;
     transition:
         background-color 0.2s ease,
         outline 0.2s ease;
-    scroll-margin-top: 180px;
-    scroll-margin-bottom: 180px;
+    scroll-margin-top: 140px;
+    scroll-margin-bottom: 220px;
 }
 
 .kokoro-line-target {
