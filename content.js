@@ -347,11 +347,15 @@ function getCleanTextFromLine(element) {
 // Clean text specifically for spoken output
 function cleanTextForSpeech(text) {
     if (!text) return "";
-    return text
-        .replace(/["'“”‘’`]/g, "") // Remove quotes/backticks
-        .replace(/[*_~#]/g, "") // Strip markdown
-        .replace(/\s+/g, " ") // Normalize whitespace
-        .trim();
+    return (
+        text
+            // Map all arrow variations (Unicode & ASCII) to " to "
+            .replace(/(?:→|➔|➜|►|─>|-->|->|=>|⇒|↦)/g, " to ")
+            .replace(/["'“”‘’`]/g, "") // Remove quotes/backticks
+            .replace(/[*_~#]/g, "") // Strip markdown formatting
+            .replace(/\s+/g, " ") // Normalize whitespace
+            .trim()
+    );
 }
 
 // Wrap ALL text nodes into sentence spans
@@ -519,7 +523,7 @@ function prepareTextChunks(element) {
     }
 }
 
-// Highlight & Smooth Auto-Scroll with dynamic bottom-padding offset
+// Highlight & Smooth Auto-Scroll centered comfortably in the viewport
 function highlightAndScrollSentence(chunkIndex, forceScroll = false) {
     if (!currentChatElement) return;
 
@@ -536,20 +540,13 @@ function highlightAndScrollSentence(chunkIndex, forceScroll = false) {
 
         if (isAutoScrollEnabled || forceScroll) {
             const firstSpan = activeSpans[0];
-            const lastSpan = activeSpans[activeSpans.length - 1];
 
-            const rect = lastSpan.getBoundingClientRect();
-            const viewportHeight =
-                window.innerHeight || document.documentElement.clientHeight;
-
-            // Keep chunk fully visible above footers/input boxes
-            if (rect.bottom > viewportHeight - 120 || rect.top < 100) {
-                firstSpan.scrollIntoView({
-                    behavior: "smooth",
-                    block: "nearest",
-                    inline: "nearest",
-                });
-            }
+            // Centers the active reading text vertically on screen
+            firstSpan.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+                inline: "nearest",
+            });
         }
     }
 }
