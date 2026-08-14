@@ -101,7 +101,9 @@ function setupLineSelectionListeners() {
 
     // Attach hover targets cleanly without shifting text
     document.body.addEventListener("mouseover", (e) => {
-        const blockElem = e.target.closest("p, li, h1, h2, h3, h4, blockquote");
+        const blockElem = e.target.closest(
+            "p, li, h1, h2, h3, h4, h5, h6, blockquote",
+        );
         if (!blockElem) return;
 
         const chat = blockElem.closest(
@@ -557,19 +559,40 @@ function speakFullResponse(chatElement, startChunkIndex = 0) {
 }
 
 function speakFromLine(chatElement, lineElement) {
-    const lineText = getCleanTextFromLine(lineElement);
-    if (!lineText) return;
-
     prepareTextChunks(chatElement);
 
-    let matchedIndex = textChunks.findIndex((chunk) => {
-        const cleanChunk = chunk.trim().toLowerCase();
-        const cleanLine = lineText.trim().toLowerCase();
-        return (
-            cleanLine.includes(cleanChunk) ||
-            cleanChunk.includes(cleanLine.slice(0, 15))
+    let matchedIndex = -1;
+
+    // 1. Direct DOM Node Matching: Find the sentence span inside the clicked line
+    const targetSpan = lineElement.classList.contains("kokoro-sentence-span")
+        ? lineElement
+        : lineElement.querySelector(".kokoro-sentence-span");
+
+    if (targetSpan) {
+        matchedIndex = chunkSpanGroups.findIndex((group) =>
+            group.includes(targetSpan),
         );
-    });
+    }
+
+    // 2. Fallback Normalized Text Search: If direct DOM match wasn't found
+    if (matchedIndex === -1) {
+        const cleanLineText = getCleanTextFromLine(lineElement)
+            .replace(/[^a-zA-Z0-9\s]/g, "")
+            .toLowerCase()
+            .trim();
+
+        if (cleanLineText) {
+            matchedIndex = textChunks.findIndex((chunk) => {
+                const cleanChunk = chunk
+                    .replace(/[^a-zA-Z0-9\s]/g, "")
+                    .toLowerCase();
+                return (
+                    cleanChunk.includes(cleanLineText) ||
+                    cleanLineText.includes(cleanChunk.slice(0, 20))
+                );
+            });
+        }
+    }
 
     if (matchedIndex === -1) matchedIndex = 0;
 
