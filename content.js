@@ -26,6 +26,27 @@ setInterval(() => {
     injectInlinePlayButtons();
 }, 1500);
 
+// Comprehensive & nested-safe chat bubble detector
+function getAllChatBubbles() {
+    const selectors = [
+        '[data-message-author-role="assistant"]',
+        ".font-claude-message",
+        ".ds-markdown",
+        "message-content",
+        ".model-response-text",
+        ".assistant-message",
+    ];
+
+    let nodes = Array.from(document.querySelectorAll(selectors.join(", ")));
+
+    // Filter out duplicate or nested elements
+    return nodes.filter((node) => {
+        return !nodes.some(
+            (parent) => parent !== node && parent.contains(node),
+        );
+    });
+}
+
 function injectInlinePlayButtons() {
     const chats = getAllChatBubbles();
     chats.forEach((chat, index) => {
@@ -60,9 +81,11 @@ function setupLineSelectionListeners() {
             e.preventDefault();
 
             const lineElem = target.closest(".kokoro-line-target");
-            const chatElem = target.closest(
-                '[data-message-author-role="assistant"], .font-claude-message, .ds-markdown',
-            );
+            const chatElem = lineElem
+                ? lineElem.closest(
+                      '[data-message-author-role="assistant"], .font-claude-message, .ds-markdown, message-content',
+                  )
+                : null;
 
             if (lineElem && chatElem) {
                 injectControlBar();
@@ -77,7 +100,7 @@ function setupLineSelectionListeners() {
         if (!blockElem) return;
 
         const chat = blockElem.closest(
-            '[data-message-author-role="assistant"], .font-claude-message, .ds-markdown',
+            '[data-message-author-role="assistant"], .font-claude-message, .ds-markdown, message-content',
         );
         if (!chat) return;
 
@@ -87,10 +110,9 @@ function setupLineSelectionListeners() {
             const jumpBtn = document.createElement("button");
             jumpBtn.className = "kokoro-line-jump-btn";
             jumpBtn.type = "button";
-            jumpBtn.innerText = "📍 Start Here";
+            jumpBtn.innerText = "📍 Start";
             jumpBtn.title = "Start reading from this section";
 
-            // Appended without touching text nodes
             blockElem.appendChild(jumpBtn);
         }
     });
@@ -229,7 +251,7 @@ function scrollToActiveLine() {
     const elemToScroll = targetBlock || currentChatElement;
     elemToScroll.scrollIntoView({ behavior: "smooth", block: "center" });
 
-    // Temporary glow effect
+    // Highlight active block briefly
     elemToScroll.classList.add("kokoro-active-reading-glow");
     setTimeout(
         () => elemToScroll.classList.remove("kokoro-active-reading-glow"),
@@ -312,10 +334,8 @@ function makeDraggable(element, handle) {
 
         document.onmousemove = (e) => {
             e.preventDefault();
-            const leftPos = e.clientX - offsetX + "px";
-            const topPos = e.clientY - offsetY + "px";
-            element.style.left = leftPos;
-            element.style.top = topPos;
+            element.style.left = e.clientX - offsetX + "px";
+            element.style.top = e.clientY - offsetY + "px";
         };
 
         document.onmouseup = () => {
@@ -564,14 +584,6 @@ function formatTime(secs) {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${m}:${s < 10 ? "0" : ""}${s}`;
-}
-
-function getAllChatBubbles() {
-    return Array.from(
-        document.querySelectorAll(
-            '[data-message-author-role="assistant"], .font-claude-message, .ds-markdown',
-        ),
-    );
 }
 
 function readNextChat() {

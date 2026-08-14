@@ -1,4 +1,7 @@
-/* Sticky Inline Response Play Button */
+/* ==========================================================================
+   1. Floating Sticky Inline Play Button
+   ========================================================================== */
+
 .kokoro-inline-play-btn {
     position: sticky;
     top: 10px;
@@ -44,7 +47,10 @@
     display: table;
 }
 
-/* Floating Control Player */
+/* ==========================================================================
+   2. Floating Control Player Frame
+   ========================================================================== */
+
 #kokoro-control-bar {
     position: fixed;
     bottom: 30px;
@@ -71,21 +77,10 @@
     transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Collapsed Mini Player Pill State */
-#kokoro-control-bar.mini {
-    width: auto;
-    padding: 8px 12px;
-    border-radius: 30px;
-}
+/* ==========================================================================
+   3. Now Playing Header & Response Selection Dropdown
+   ========================================================================== */
 
-#kokoro-control-bar.mini .kokoro-now-playing,
-#kokoro-control-bar.mini .kokoro-progress-container,
-#kokoro-control-bar.mini .kokoro-settings-row,
-#kokoro-control-bar.mini .kokoro-btn:not(#kk-play):not(#kk-mini-toggle) {
-    display: none !important;
-}
-
-/* Now Playing Dropdown Container */
 .kokoro-now-playing {
     position: relative;
     background: rgba(255, 255, 255, 0.04);
@@ -122,7 +117,7 @@
     color: #9ca3af;
 }
 
-/* Dropdown Menu List */
+/* Scrollable Response Dropdown */
 .kokoro-response-dropdown {
     position: absolute;
     top: 100%;
@@ -132,16 +127,16 @@
     background: #181825;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 12px;
-    max-height: 180px;
-    overflow-y: auto;
+    max-height: 240px;
+    overflow-y: auto !important;
     display: none;
     flex-direction: column;
-    z-index: 1000;
+    z-index: 99999 !important;
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
 }
 
 .kokoro-response-dropdown.show {
-    display: flex;
+    display: flex !important;
 }
 
 .kokoro-dropdown-item {
@@ -153,11 +148,16 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    transition: background-color 0.15s ease;
+}
+
+.kokoro-dropdown-item:last-child {
+    border-bottom: none;
 }
 
 .kokoro-dropdown-item:hover {
     background: rgba(168, 85, 247, 0.2);
-    color: #fff;
+    color: #ffffff;
 }
 
 .kokoro-dropdown-item.active {
@@ -166,7 +166,10 @@
     background: rgba(168, 85, 247, 0.1);
 }
 
-/* Controls Layout */
+/* ==========================================================================
+   4. Control Buttons & Rows
+   ========================================================================== */
+
 .kokoro-top-row {
     display: flex;
     align-items: center;
@@ -181,9 +184,11 @@
     display: flex;
     align-items: center;
 }
+
 .kokoro-drag-handle:hover {
     color: #9ca3af;
 }
+
 .kokoro-drag-handle:active {
     cursor: grabbing;
 }
@@ -212,13 +217,16 @@
 .kokoro-btn-primary {
     background: linear-gradient(135deg, #6366f1, #a855f7);
     border: none;
-    color: #fff;
+    color: #ffffff;
     width: 34px;
     height: 34px;
     font-size: 12px;
 }
 
-/* Settings Row (Speed + Toggles) */
+/* ==========================================================================
+   5. Settings Row & Progress Slider
+   ========================================================================== */
+
 .kokoro-settings-row {
     display: flex;
     align-items: center;
@@ -255,7 +263,6 @@
     border-color: rgba(168, 85, 247, 0.5);
 }
 
-/* Progress Slider */
 .kokoro-progress-container {
     display: flex;
     align-items: center;
@@ -286,6 +293,16 @@
     cursor: pointer;
 }
 
+/* Spinner Animation */
+.kokoro-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: kokoro-spin 0.8s linear infinite;
+}
+
 @keyframes kokoro-spin {
     0% {
         transform: rotate(0deg);
@@ -295,52 +312,39 @@
     }
 }
 
-.kokoro-spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: kokoro-spin 0.8s linear infinite;
+/* ==========================================================================
+   6. Collapsed Mini Player State
+   ========================================================================== */
+
+#kokoro-control-bar.mini {
+    width: auto !important;
+    padding: 8px 12px !important;
+    border-radius: 30px !important;
 }
 
-/* Inline Line Target Styling */
-.kokoro-line-target {
-    position: relative;
+/* Hide detailed controls in mini mode */
+#kokoro-control-bar.mini .kokoro-now-playing,
+#kokoro-control-bar.mini .kokoro-settings-row,
+#kokoro-control-bar.mini .kokoro-progress-container,
+#kokoro-control-bar.mini #kk-prev,
+#kokoro-control-bar.mini #kk-rw,
+#kokoro-control-bar.mini #kk-ff,
+#kokoro-control-bar.mini #kk-next {
+    display: none !important;
 }
 
-.kokoro-line-jump-btn {
-    display: inline-block;
-    margin-right: 6px;
-    padding: 2px 6px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #3b82f6;
-    background-color: rgba(59, 130, 246, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    border-radius: 4px;
-    cursor: pointer;
-    opacity: 0;
-    transition:
-        opacity 0.2s ease,
-        background-color 0.15s ease;
+/* Keep Drag Handle, Play/Pause, Locate 🎯, and Mini Toggle visible */
+#kokoro-control-bar.mini #kk-drag,
+#kokoro-control-bar.mini #kk-play,
+#kokoro-control-bar.mini #kk-locate,
+#kokoro-control-bar.mini #kk-mini-toggle {
+    display: inline-flex !important;
 }
 
-.kokoro-line-target:hover .kokoro-line-jump-btn {
-    opacity: 1;
-}
+/* ==========================================================================
+   7. Hover Line Start Jump Button & Glow Highlights
+   ========================================================================== */
 
-.kokoro-line-jump-btn:hover {
-    background-color: #3b82f6;
-    color: #ffffff;
-}
-
-/* Prevent inline text shift when hovering lines */
-.kokoro-line-target {
-    position: relative !important;
-}
-
-/* Prevent inline text shift when hovering lines */
 .kokoro-line-target {
     position: relative !important;
 }
@@ -350,14 +354,14 @@
     right: 8px;
     top: -8px;
     z-index: 100;
-    padding: 1px 5px; /* Reduced padding */
-    font-size: 9px; /* Smaller font size */
-    line-height: 1.2;
+    padding: 1px 5px !important;
+    font-size: 9px !important;
+    line-height: 1.2 !important;
     font-weight: 600;
     color: #2563eb;
     background-color: #eff6ff;
     border: 1px solid #bfdbfe;
-    border-radius: 6px; /* Tighter border radius */
+    border-radius: 6px;
     cursor: pointer;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
     opacity: 0;
@@ -378,11 +382,11 @@
     transform: scale(1.03);
 }
 
-/* Glow highlight effect when clicking 🎯 Target button */
+/* Glow highlight effect when active or clicking Target button */
 .kokoro-active-reading-glow {
-    outline: 2px solid #3b82f6 !important;
+    outline: 2px solid #a855f7 !important;
     border-radius: 6px;
-    background-color: rgba(59, 130, 246, 0.08) !important;
+    background-color: rgba(168, 85, 247, 0.15) !important;
     transition:
         background-color 0.3s ease,
         outline 0.3s ease;
