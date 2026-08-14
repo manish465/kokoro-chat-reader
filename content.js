@@ -5,7 +5,7 @@ let chunkSpanGroups = []; // Stores arrays of <span> elements grouped per chunk
 let currentChunkIndex = 0;
 
 // Configuration: Set how many sentences to combine per playback chunk
-const SENTENCES_PER_CHUNK = 3;
+const SENTENCES_PER_CHUNK = 7;
 
 let playerState = "IDLE"; // 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED'
 let controlBar = null;
