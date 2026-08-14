@@ -16,11 +16,12 @@ let estimatedTotalSecs = 0;
 // Load Saved Preferences on startup
 loadUserPreferences();
 
-// Initial scan for inline Read buttons ONLY
+// Initial scan for inline Read buttons & line targeting
 injectInlinePlayButtons();
+setupLineSelectionListeners();
 setupMutationObserver();
 
-// Periodic backup scan to add buttons to new messages
+// Periodic backup scan
 setInterval(() => {
     injectInlinePlayButtons();
 }, 1500);
@@ -36,21 +37,66 @@ function injectInlinePlayButtons() {
         btn.className = "kokoro-inline-play-btn";
         btn.type = "button";
         btn.innerHTML = `▶ Read #${index + 1}`;
-        btn.title = "Read this response";
+        btn.title = "Read this response from start";
 
         btn.onclick = (e) => {
             e.stopPropagation();
             e.preventDefault();
-            // Player is injected ONLY on user click
             injectControlBar();
-            speakFullResponse(chat);
+            speakFullResponse(chat, 0);
         };
 
         chat.insertBefore(btn, chat.firstChild);
     });
 }
 
-// MutationObserver purely for injecting buttons onto new responses
+// Zero-layout-shift line targeting
+function setupLineSelectionListeners() {
+    document.body.addEventListener("click", (e) => {
+        const target = e.target;
+
+        if (target.classList.contains("kokoro-line-jump-btn")) {
+            e.stopPropagation();
+            e.preventDefault();
+
+            const lineElem = target.closest(".kokoro-line-target");
+            const chatElem = target.closest(
+                '[data-message-author-role="assistant"], .font-claude-message, .ds-markdown',
+            );
+
+            if (lineElem && chatElem) {
+                injectControlBar();
+                speakFromLine(chatElem, lineElem);
+            }
+        }
+    });
+
+    // Attach hover targets cleanly without shifting text
+    document.body.addEventListener("mouseover", (e) => {
+        const blockElem = e.target.closest("p, li, h1, h2, h3, h4, blockquote");
+        if (!blockElem) return;
+
+        const chat = blockElem.closest(
+            '[data-message-author-role="assistant"], .font-claude-message, .ds-markdown',
+        );
+        if (!chat) return;
+
+        if (!blockElem.classList.contains("kokoro-line-target")) {
+            blockElem.classList.add("kokoro-line-target");
+
+            const jumpBtn = document.createElement("button");
+            jumpBtn.className = "kokoro-line-jump-btn";
+            jumpBtn.type = "button";
+            jumpBtn.innerText = "📍 Start Here";
+            jumpBtn.title = "Start reading from this section";
+
+            // Appended without touching text nodes
+            blockElem.appendChild(jumpBtn);
+        }
+    });
+}
+
+// MutationObserver for live response streaming
 function setupMutationObserver() {
     const observer = new MutationObserver(() => {
         injectInlinePlayButtons();
@@ -90,6 +136,7 @@ function injectControlBar() {
       <button class="kokoro-btn kokoro-btn-primary" id="kk-play" title="Play/Pause">▶</button>
       <button class="kokoro-btn" id="kk-ff" title="+10s Forward">⏩</button>
       <button class="kokoro-btn" id="kk-next" title="Next Response">⏭</button>
+      <button class="kokoro-btn" id="kk-locate" title="Jump to current reading line in chat">🎯</button>
       <button class="kokoro-btn" id="kk-mini-toggle" title="Minimize/Expand">_</button>
     </div>
 
@@ -127,6 +174,7 @@ function injectControlBar() {
     document.getElementById("kk-ff").onclick = () => seekRelative(10);
     document.getElementById("kk-next").onclick = readNextChat;
     document.getElementById("kk-prev").onclick = readPreviousChat;
+    document.getElementById("kk-locate").onclick = scrollToActiveLine;
     document.getElementById("kk-mini-toggle").onclick = toggleMiniMode;
 
     const speedSelect = document.getElementById("kk-speed");
@@ -151,7 +199,45 @@ function injectControlBar() {
     makeDraggable(controlBar, document.getElementById("kk-drag"));
 }
 
-// Mini / Minimize Mode Toggle
+// Scroll chat directly to active spoken sentence
+function scrollToActiveLine() {
+    if (!currentChatElement) return;
+
+    const currentChunk = textChunks[currentChunkIndex];
+    if (!currentChunk) {
+        currentChatElement.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+        });
+        return;
+    }
+
+    const blocks = currentChatElement.querySelectorAll(
+        "p, li, h1, h2, h3, h4, blockquote",
+    );
+    let targetBlock = null;
+
+    for (const block of blocks) {
+        const text = getCleanTextFromLine(block).toLowerCase();
+        const chunkSnippet = currentChunk.trim().toLowerCase().slice(0, 20);
+        if (text.includes(chunkSnippet)) {
+            targetBlock = block;
+            break;
+        }
+    }
+
+    const elemToScroll = targetBlock || currentChatElement;
+    elemToScroll.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Temporary glow effect
+    elemToScroll.classList.add("kokoro-active-reading-glow");
+    setTimeout(
+        () => elemToScroll.classList.remove("kokoro-active-reading-glow"),
+        2000,
+    );
+}
+
+// Mini Mode Toggle
 function toggleMiniMode() {
     controlBar.classList.toggle("mini");
     const miniBtn = document.getElementById("kk-mini-toggle");
@@ -198,7 +284,7 @@ function toggleDropdown(e) {
         item.onclick = (e) => {
             e.stopPropagation();
             dropdown.classList.remove("show");
-            speakFullResponse(chat);
+            speakFullResponse(chat, 0);
         };
 
         dropdown.appendChild(item);
@@ -244,8 +330,9 @@ function makeDraggable(element, handle) {
 // Clean Text Extractor
 function getCleanTextFromChat(element) {
     const clone = element.cloneNode(true);
-    const inlineBtn = clone.querySelector(".kokoro-inline-play-btn");
-    if (inlineBtn) inlineBtn.remove();
+    clone
+        .querySelectorAll(".kokoro-inline-play-btn, .kokoro-line-jump-btn")
+        .forEach((btn) => btn.remove());
 
     if (isSkipCodeEnabled) {
         const codeBlocks = clone.querySelectorAll("pre, code");
@@ -254,6 +341,14 @@ function getCleanTextFromChat(element) {
         });
     }
 
+    return clone.innerText.trim();
+}
+
+function getCleanTextFromLine(element) {
+    const clone = element.cloneNode(true);
+    clone
+        .querySelectorAll(".kokoro-inline-play-btn, .kokoro-line-jump-btn")
+        .forEach((btn) => btn.remove());
     return clone.innerText.trim();
 }
 
@@ -290,17 +385,44 @@ function prepareTextChunks(element) {
     textChunks = cleanText.match(/[^.!?]+[.!?]+|\S+/g) || [cleanText];
 }
 
-function speakFullResponse(chatElement) {
+function speakFullResponse(chatElement, startChunkIndex = 0) {
     stopTimer();
     window.speechSynthesis.cancel();
     setLoadingState(true);
 
     setTimeout(() => {
         prepareTextChunks(chatElement);
-        currentChunkIndex = 0;
-        currentElapsedSecs = 0;
-        playChunk(0);
+        const startIdx = Math.max(
+            0,
+            Math.min(startChunkIndex, textChunks.length - 1),
+        );
+        currentChunkIndex = startIdx;
+
+        const ratio = startIdx / textChunks.length;
+        currentElapsedSecs = ratio * estimatedTotalSecs;
+
+        playChunk(startIdx);
     }, 50);
+}
+
+function speakFromLine(chatElement, lineElement) {
+    const lineText = getCleanTextFromLine(lineElement);
+    if (!lineText) return;
+
+    prepareTextChunks(chatElement);
+
+    let matchedIndex = textChunks.findIndex((chunk) => {
+        const cleanChunk = chunk.trim().toLowerCase();
+        const cleanLine = lineText.trim().toLowerCase();
+        return (
+            cleanLine.includes(cleanChunk) ||
+            cleanChunk.includes(cleanLine.slice(0, 15))
+        );
+    });
+
+    if (matchedIndex === -1) matchedIndex = 0;
+
+    speakFullResponse(chatElement, matchedIndex);
 }
 
 function playChunk(index) {
@@ -379,7 +501,7 @@ function togglePlayPause() {
         startTimer();
         setPlayerState("PLAYING");
     } else if (currentChatElement) {
-        speakFullResponse(currentChatElement);
+        speakFullResponse(currentChatElement, currentChunkIndex);
     }
 }
 
@@ -455,19 +577,19 @@ function getAllChatBubbles() {
 function readNextChat() {
     const chats = getAllChatBubbles();
     const idx = chats.indexOf(currentChatElement);
-    if (idx < chats.length - 1) speakFullResponse(chats[idx + 1]);
+    if (idx < chats.length - 1) speakFullResponse(chats[idx + 1], 0);
 }
 
 function readPreviousChat() {
     const chats = getAllChatBubbles();
     const idx = chats.indexOf(currentChatElement);
-    if (idx > 0) speakFullResponse(chats[idx - 1]);
+    if (idx > 0) speakFullResponse(chats[idx - 1], 0);
 }
 
 chrome.runtime.onMessage.addListener((request) => {
     if (request.action === "READ_CURRENT_CHAT") {
         injectControlBar();
         const chats = getAllChatBubbles();
-        if (chats.length) speakFullResponse(chats[chats.length - 1]);
+        if (chats.length) speakFullResponse(chats[chats.length - 1], 0);
     }
 });
